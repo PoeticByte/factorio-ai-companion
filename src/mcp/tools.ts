@@ -306,6 +306,88 @@ export const TOOLS: Record<string, {
     }
   },
 
+  // Blueprint / mass construction (Phase 2): stamp ghosts, then build them fairly
+  // (companion walks via pathfinding, consumes inventory, revives each ghost).
+  blueprint_place: {
+    desc: "Place a blueprint (as ghosts) from an export string at coords, then auto-build it ghost-by-ghost. Reports materials needed/short.",
+    rcon: "/fac_blueprint_place {companionId} {x} {y} {blueprint}",
+    params: {
+      companionId: { type: "number", required: true },
+      x: { type: "number", desc: "Anchor X", required: true },
+      y: { type: "number", desc: "Anchor Y", required: true },
+      blueprint: { type: "string", desc: "Blueprint export string", required: true }
+    }
+  },
+  blueprint_line: {
+    desc: "Stamp a straight line of N entity ghosts and build them (belts/inserters/poles). direction: 0=N,1=E,2=S,3=W.",
+    rcon: "/fac_blueprint_line {companionId} {entityName} {x} {y} {direction} {count}",
+    params: {
+      companionId: { type: "number", required: true },
+      entityName: { type: "string", desc: "Entity to place, e.g. transport-belt", required: true },
+      x: { type: "number", desc: "Start X", required: true },
+      y: { type: "number", desc: "Start Y", required: true },
+      direction: { type: "number", desc: "0=N,1=E,2=S,3=W", default: 1 },
+      count: { type: "number", desc: "Number of entities", default: 5 }
+    }
+  },
+  blueprint_status: {
+    desc: "Check blueprint/line build progress (built, remaining, blocked, missing materials)",
+    rcon: "/fac_blueprint_status {companionId}",
+    params: { companionId: { type: "number", required: true } }
+  },
+  blueprint_stop: {
+    desc: "Stop the current blueprint build (leaves remaining ghosts in the world)",
+    rcon: "/fac_blueprint_stop {companionId}",
+    params: { companionId: { type: "number", required: true } }
+  },
+
+  // Logistics (Phase 3): fair-play hauling + refueling (companion walks via pathfinding,
+  // carries items in its own inventory, takes/gives one entity at a time).
+  haul: {
+    desc: "Haul an item from a source position to a dest position, looping. quota<=0 means endless until source empties.",
+    rcon: "/fac_haul {companionId} {item} {sx} {sy} {dx} {dy} {quota}",
+    params: {
+      companionId: { type: "number", required: true },
+      item: { type: "string", desc: "Item to move, e.g. iron-ore", required: true },
+      sx: { type: "number", desc: "Source X", required: true },
+      sy: { type: "number", desc: "Source Y", required: true },
+      dx: { type: "number", desc: "Dest X", required: true },
+      dy: { type: "number", desc: "Dest Y", required: true },
+      quota: { type: "number", desc: "Total to deliver (<=0 = endless)", default: 0 }
+    }
+  },
+  haul_status: {
+    desc: "Check haul progress (item, delivered, quota, phase)",
+    rcon: "/fac_haul_status {companionId}",
+    params: { companionId: { type: "number", required: true } }
+  },
+  haul_stop: {
+    desc: "Stop hauling",
+    rcon: "/fac_haul_stop {companionId}",
+    params: { companionId: { type: "number", required: true } }
+  },
+  refuel: {
+    desc: "Keep burners within radius of a point topped up with fuel from the companion's inventory (endless until out of fuel).",
+    rcon: "/fac_refuel {companionId} {fuel} {x} {y} {radius}",
+    params: {
+      companionId: { type: "number", required: true },
+      fuel: { type: "string", desc: "Fuel item, e.g. coal", required: true },
+      x: { type: "number", desc: "Area center X", required: true },
+      y: { type: "number", desc: "Area center Y", required: true },
+      radius: { type: "number", desc: "Area radius", default: 20 }
+    }
+  },
+  refuel_status: {
+    desc: "Check refuel status (fuel, units refueled)",
+    rcon: "/fac_refuel_status {companionId}",
+    params: { companionId: { type: "number", required: true } }
+  },
+  refuel_stop: {
+    desc: "Stop refueling",
+    rcon: "/fac_refuel_stop {companionId}",
+    params: { companionId: { type: "number", required: true } }
+  },
+
   // Action/Combat
   action_attack: {
     desc: "Attack an entity at coordinates (instant)",
@@ -354,7 +436,7 @@ export const TOOLS: Record<string, {
     }
   },
   action_patrol: {
-    desc: "Patrol between points",
+    desc: "Patrol between points. NOT IMPLEMENTED YET (planned for Phase 4 real patrol, needs Phase 1 pathfinding).",
     rcon: "/fac_action_patrol {companionId} {points}",
     params: {
       companionId: { type: "number", required: true },
@@ -453,7 +535,7 @@ const SPECIAL_TOOLS = [
   },
   {
     name: "companion_status",
-    description: "Get status of ONE companion including running skill (combines Lua position + TS skill tracking).",
+    description: "Get unified status of ONE companion: current state/task (idle, mining, crafting, building, combat, walking, following), position, health, top inventory items, plus any running background skill.",
     inputSchema: {
       type: "object" as const,
       properties: {

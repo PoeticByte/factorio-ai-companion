@@ -25,7 +25,7 @@ export class FactorioMCPServer {
     this.server = new Server(
       {
         name: "factorio-companion",
-        version: "0.13.3",
+        version: "0.14.0",
       },
       {
         capabilities: {
@@ -66,6 +66,9 @@ export class FactorioMCPServer {
         // Always clear Lua queues
         await this.rcon.sendCommand(`/fac_resource_mine_stop ${companionId}`);
         await this.rcon.sendCommand(`/fac_item_craft_stop ${companionId}`);
+        await this.rcon.sendCommand(`/fac_blueprint_stop ${companionId}`);
+        await this.rcon.sendCommand(`/fac_haul_stop ${companionId}`);
+        await this.rcon.sendCommand(`/fac_refuel_stop ${companionId}`);
         await this.rcon.sendCommand(`/fac_move_stop ${companionId}`);
 
         if (!skill) {
@@ -189,20 +192,20 @@ export class FactorioMCPServer {
         };
       }
 
-      // companion_status - get companion position + running skill
+      // companion_status - unified Lua state/task/inventory + TS background-skill tracking
       if (toolName === "companion_status") {
         const companionId = args.companionId as number;
 
-        // Get position from Lua
-        const posResponse = await this.rcon.sendCommand(`/fac_companion_position ${companionId}`);
-        let position = null;
+        // Rich status from Lua (state, task, position, health, inventory)
+        const statusResponse = await this.rcon.sendCommand(`/fac_companion_status ${companionId}`);
+        let status: any = {};
         try {
-          position = JSON.parse(posResponse.data || "{}");
+          status = JSON.parse(statusResponse.data || "{}");
         } catch {}
 
-        // Get skill status from TS tracking
+        // Merge TS-tracked background skill (mine_until / combat_until child process)
         const skill = runningSkills.get(companionId);
-        const skillInfo = skill ? {
+        const backgroundSkill = skill ? {
           running: true,
           skillName: skill.skillName,
           pid: skill.pid,
@@ -212,7 +215,7 @@ export class FactorioMCPServer {
         return {
           content: [{
             type: "text" as const,
-            text: JSON.stringify({ ...position, skill: skillInfo })
+            text: JSON.stringify({ ...status, backgroundSkill })
           }]
         };
       }

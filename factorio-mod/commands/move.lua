@@ -1,5 +1,6 @@
--- AI Companion v0.7.0 - Move commands
+-- AI Companion v0.7.0 - Move commands (pathfinding via commands.navigation)
 local u = require("commands.init")
+local nav = require("commands.navigation")
 
 commands.add_command("fac_move_to", nil, function(cmd)
   u.safe_command(function()
@@ -8,8 +9,9 @@ commands.add_command("fac_move_to", nil, function(cmd)
     if not id then u.error_response("Companion not found"); return end
     local x, y = tonumber(args[2]), tonumber(args[3])
     if not x or not y then u.error_response("Invalid coordinates"); return end
-    storage.walking_queues[id] = {target = {x = x, y = y}}
-    u.json_response({id = id, walking_to = {x = x, y = y}})
+    local result = nav.go_to(id, {x = x, y = y})
+    result.id = id
+    u.json_response(result)
   end)
 end)
 
@@ -19,18 +21,18 @@ commands.add_command("fac_move_follow", nil, function(cmd)
     local id = u.find_companion(args[1])
     if not id then u.error_response("Companion not found"); return end
     local pname = args[2]
-    if not game.get_player(pname) then u.error_response("Player not found"); return end
-    storage.walking_queues[id] = {follow_player = pname}
-    u.json_response({id = id, following = pname})
+    local result = nav.follow(id, pname)
+    if result.error then u.error_response(result.error); return end
+    result.id = id
+    u.json_response(result)
   end)
 end)
 
 commands.add_command("fac_move_stop", nil, function(cmd)
   u.safe_command(function()
-    local id, c = u.find_companion(cmd.parameter)
+    local id = u.find_companion(cmd.parameter)
     if not id then u.error_response("Companion not found"); return end
-    storage.walking_queues[id] = nil
-    c.entity.walking_state = {walking = false}
+    nav.stop(id)
     u.json_response({id = id, stopped = true})
   end)
 end)

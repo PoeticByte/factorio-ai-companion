@@ -1,4 +1,21 @@
 ---------------------------------------------------------------------------------------------------
+Version: 0.14.0
+Date: 2026-06-18
+  Features:
+    - Unified fac_companion_status: single view of state/task/inventory/health/position
+    - Real pathfinding (commands/navigation.lua) via engine LuaSurface.request_path +
+      on_script_path_request_finished waypoint following; all movement, mining, building and
+      logistics now route through nav (obstacle-aware, reports unreachable goals)
+    - Blueprint / mass construction: fac_blueprint_place (from export string), fac_blueprint_line,
+      fac_blueprint_status, fac_blueprint_stop -- walk to each ghost, consume inventory, revive
+    - Logistics crew: fac_haul (A->B item transport) and fac_refuel (keep area burners fueled)
+  Bugfixes:
+    - request_path must pass entity_to_ignore = the companion, else its own body blocks the start
+      tile and every goal returns unreachable
+  Changes:
+    - 63 RCON commands; validate-tools stays 1:1 (62 MCP tools + 2 skills + 2 special)
+    - action_patrol marked as planned (real patrol arrives in Phase 4)
+---------------------------------------------------------------------------------------------------
 Version: 0.13.3
 Date: 2025-01-17
   Features:

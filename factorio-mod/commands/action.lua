@@ -1,5 +1,6 @@
 -- AI Companion v0.7.0 - Action commands
 local u = require("commands.init")
+local nav = require("commands.navigation")
 
 commands.add_command("fac_action_attack", nil, function(cmd)
   u.safe_command(function()
@@ -42,16 +43,18 @@ commands.add_command("fac_action_flee", nil, function(cmd)
     local len = math.sqrt(dx*dx + dy*dy)
     if len > 0 then dx, dy = dx / len * dist, dy / len * dist else dx = dist end
     local flee_pos = {x = pos.x + dx, y = pos.y + dy}
-    storage.walking_queues[id] = {target = flee_pos}
+    nav.go_to(id, flee_pos)
     u.json_response({id = id, fleeing = true, enemies = #enemies, to = flee_pos})
   end)
 end)
 
+-- STUB: real waypoint patrol arrives in Phase 4 (needs nav pathfinding from Phase 1).
+-- Until then this reports unimplemented rather than silently doing nothing.
 commands.add_command("fac_action_patrol", nil, function(cmd)
   u.safe_command(function()
     local id = u.find_companion(cmd.parameter)
     if not id then u.error_response("Companion not found"); return end
-    u.json_response({id = id, error = "Not implemented"})
+    u.json_response({id = id, error = "Not implemented yet (planned: Phase 4 real patrol)", planned = true})
   end)
 end)
 

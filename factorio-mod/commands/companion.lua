@@ -166,6 +166,18 @@ commands.add_command("fac_companion_stop_all", nil, function(cmd)
       storage.combat_queues[id] = nil
       stopped[#stopped + 1] = "combat"
     end
+    if storage.ghost_build_queues and storage.ghost_build_queues[id] then
+      storage.ghost_build_queues[id] = nil
+      stopped[#stopped + 1] = "construct"
+    end
+    if storage.haul_queues and storage.haul_queues[id] then
+      storage.haul_queues[id] = nil
+      stopped[#stopped + 1] = "haul"
+    end
+    if storage.refuel_queues and storage.refuel_queues[id] then
+      storage.refuel_queues[id] = nil
+      stopped[#stopped + 1] = "refuel"
+    end
     if storage.walking_queues and storage.walking_queues[id] then
       storage.walking_queues[id] = nil
       stopped[#stopped + 1] = "walk"

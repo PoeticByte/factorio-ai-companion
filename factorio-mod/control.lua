@@ -1,6 +1,7 @@
 -- AI Companion - Factorio 2.x
 local u = require("commands.init")
 local queues = require("commands.queues")
+local nav = require("commands.navigation")
 
 -- Get version dynamically from mod info
 local MOD_VERSION = script.active_mods["ai-companion"] or "unknown"
@@ -14,6 +15,7 @@ local function init_storage()
   storage.errors = storage.errors or {}
   storage.companion_markers = storage.companion_markers or {}
   queues.init()
+  nav.init()
 end
 
 local function cleanup_messages()
@@ -138,6 +140,9 @@ require("commands.research")
 require("commands.resource")
 require("commands.world")
 require("commands.combat")
+require("commands.blueprint")
+require("commands.logistics")
+require("commands.status")
 require("commands.help")
 
 -- Update companion map markers
@@ -178,25 +183,22 @@ script.on_nth_tick(5, function(ev)
   queues.tick_craft_queues()
   queues.tick_build_queues()
   queues.tick_combat_queues()
-  -- Process walking queues
+  queues.tick_ghost_build_queues()
+  queues.tick_haul_queues()
+  queues.tick_refuel_queues()
+  -- Process walking queues via the pathfinding navigator
   if not storage.walking_queues then return end
   for cid, q in pairs(storage.walking_queues) do
     local c = u.get_companion(cid)
-    if not c then storage.walking_queues[cid] = nil; goto skip end
-    if q.follow_player then
-      local p = game.players[q.follow_player]
-      if p and p.valid then q.target = {x = p.position.x, y = p.position.y}
-      else storage.walking_queues[cid] = nil; goto skip end
+    if not c then
+      storage.walking_queues[cid] = nil
+    elseif nav.tick(cid, q, c) then
+      storage.walking_queues[cid] = nil
     end
-    if not q.target then storage.walking_queues[cid] = nil; goto skip end
-    local e, dist = c.entity, u.distance(c.entity.position, q.target)
-    if dist < 2 then
-      e.walking_state = {walking = false}
-      if not q.follow_player then storage.walking_queues[cid] = nil end
-    else
-      local dir = u.get_direction(e.position, q.target)
-      if dir then e.walking_state = {walking = true, direction = dir} end
-    end
-    ::skip::
   end
+end)
+
+-- Async pathfinding results (engine unit pathfinder -> waypoints)
+script.on_event(defines.events.on_script_path_request_finished, function(ev)
+  nav.on_path_finished(ev)
 end)
