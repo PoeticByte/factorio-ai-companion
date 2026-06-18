@@ -436,7 +436,7 @@ export const TOOLS: Record<string, {
     }
   },
   action_patrol: {
-    desc: "Patrol between points. NOT IMPLEMENTED YET (planned for Phase 4 real patrol, needs Phase 1 pathfinding).",
+    desc: "Patrol a route of waypoints (JSON array of {x,y}), engaging enemies that come within range, then resuming the route. Stop with companion_stop_all or move_stop.",
     rcon: "/fac_action_patrol {companionId} {points}",
     params: {
       companionId: { type: "number", required: true },

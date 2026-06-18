@@ -1,6 +1,7 @@
 -- AI Companion v0.7.0 - Action commands
 local u = require("commands.init")
 local nav = require("commands.navigation")
+local queues = require("commands.queues")
 
 commands.add_command("fac_action_attack", nil, function(cmd)
   u.safe_command(function()
@@ -48,13 +49,31 @@ commands.add_command("fac_action_flee", nil, function(cmd)
   end)
 end)
 
--- STUB: real waypoint patrol arrives in Phase 4 (needs nav pathfinding from Phase 1).
--- Until then this reports unimplemented rather than silently doing nothing.
+-- Patrol a list of waypoints (JSON array of {x,y}), engaging enemies along the way.
 commands.add_command("fac_action_patrol", nil, function(cmd)
   u.safe_command(function()
-    local id = u.find_companion(cmd.parameter)
+    local first, rest = (cmd.parameter or ""):match("^(%S+)%s+(.+)$")
+    local id = u.find_companion(first)
     if not id then u.error_response("Companion not found"); return end
-    u.json_response({id = id, error = "Not implemented yet (planned: Phase 4 real patrol)", planned = true})
+    if not rest then u.error_response('Usage: <id> <points>  JSON [{"x":10,"y":10},...] or "10,10 20,10"'); return end
+    local points = {}
+    -- Preferred: JSON array of {x,y} (what the MCP tool sends).
+    local ok, pts = pcall(helpers.json_to_table, rest)
+    if ok and type(pts) == "table" then
+      for _, p in ipairs(pts) do
+        if p.x and p.y then points[#points + 1] = {x = tonumber(p.x), y = tonumber(p.y)} end
+      end
+    end
+    -- Fallback: space-separated "x,y x,y" pairs (easy to type over RCON/console).
+    if #points < 1 then
+      for sx, sy in rest:gmatch("(%-?%d+%.?%d*)%s*,%s*(%-?%d+%.?%d*)") do
+        points[#points + 1] = {x = tonumber(sx), y = tonumber(sy)}
+      end
+    end
+    if #points < 1 then u.error_response("No valid points (JSON or x,y x,y)"); return end
+    local res = queues.start_patrol(id, points)
+    res.id = id
+    u.json_response(res)
   end)
 end)
 

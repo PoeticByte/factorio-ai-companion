@@ -32,6 +32,7 @@ commands.add_command("fac_move_stop", nil, function(cmd)
   u.safe_command(function()
     local id = u.find_companion(cmd.parameter)
     if not id then u.error_response("Companion not found"); return end
+    if storage.patrol_queues then storage.patrol_queues[id] = nil end  -- moving cancels patrol
     nav.stop(id)
     u.json_response({id = id, stopped = true})
   end)

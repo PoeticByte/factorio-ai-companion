@@ -178,6 +178,10 @@ commands.add_command("fac_companion_stop_all", nil, function(cmd)
       storage.refuel_queues[id] = nil
       stopped[#stopped + 1] = "refuel"
     end
+    if storage.patrol_queues and storage.patrol_queues[id] then
+      storage.patrol_queues[id] = nil
+      stopped[#stopped + 1] = "patrol"
+    end
     if storage.walking_queues and storage.walking_queues[id] then
       storage.walking_queues[id] = nil
       stopped[#stopped + 1] = "walk"

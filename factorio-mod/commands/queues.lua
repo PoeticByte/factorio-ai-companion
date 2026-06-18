@@ -46,6 +46,7 @@ function M.init()
   storage.haul_queues = storage.haul_queues or {}
   storage.refuel_queues = storage.refuel_queues or {}
   storage.logistics_last = storage.logistics_last or {}
+  storage.patrol_queues = storage.patrol_queues or {}
 end
 
 -- ============ HARVEST ============
@@ -746,6 +747,94 @@ function M.stop_refuel(cid)
   local r = storage.refuel_queues[cid].refueled
   storage.refuel_queues[cid] = nil
   return {stopped = true, refueled = r}
+end
+
+-- ============ PATROL (Phase 4: real waypoint patrol + engage) ============
+-- Loop a set of waypoints via nav; when an enemy enters engage range, take over
+-- movement and open fire (reuses combat ranges); resume the route once clear.
+
+local PATROL_ENGAGE = 18   -- detect enemies within this distance of the companion
+
+function M.start_patrol(cid, points)
+  local c = valid_companion(cid)
+  if not c then return {error = "Invalid companion"} end
+  if not points or #points < 1 then return {error = "No patrol points"} end
+  storage.patrol_queues[cid] = {
+    points = points, index = 1, phase = "moving",
+    moving = false, cooldown = 0, engage_range = PATROL_ENGAGE,
+  }
+  return {started = true, points = #points}
+end
+
+function M.tick_patrol_queues()
+  process_queue("patrol_queues", function(cid, q, c)
+    local e = c.entity
+    if q.cooldown > 0 then q.cooldown = q.cooldown - TICK_INTERVAL end
+
+    -- Nearest enemy within engage range.
+    local nearest, nd = nil, math.huge
+    local foes = e.surface.find_entities_filtered{
+      position = e.position, radius = q.engage_range or PATROL_ENGAGE,
+      force = "enemy", type = {"unit", "unit-spawner", "turret"}
+    }
+    for _, f in ipairs(foes) do
+      if f.valid then
+        local d = u.distance(e.position, f.position)
+        if d < nd then nd, nearest = d, f end
+      end
+    end
+
+    if nearest then
+      q.phase = "fighting"
+      storage.walking_queues[cid] = nil   -- take movement away from nav while fighting
+      q.moving = false
+      if nd <= ATTACK_RANGE then
+        e.walking_state = {walking = false}
+        if q.cooldown <= 0 then
+          e.shooting_state = {state = defines.shooting.shooting_enemies, position = nearest.position}
+          q.cooldown = ATTACK_COOLDOWN
+        end
+      else
+        e.shooting_state = {state = defines.shooting.not_shooting}
+        local dir = u.get_direction(e.position, nearest.position)
+        if dir then e.walking_state = {walking = true, direction = dir} end
+      end
+      return false
+    end
+
+    -- No enemies: resume patrolling the route.
+    if q.phase == "fighting" then
+      e.shooting_state = {state = defines.shooting.not_shooting}
+      q.phase = "moving"
+      q.moving = false
+    end
+
+    local target = q.points[q.index]
+    if not target then return true end
+    local r = travel(cid, c, target, 2, q)
+    if r == true or r == nil then           -- arrived, or unreachable -> next point
+      q.index = (q.index % #q.points) + 1
+      q.moving = false
+    end
+    return false
+  end)
+end
+
+function M.get_patrol_status(cid)
+  local q = storage.patrol_queues[cid]
+  if not q then return {active = false} end
+  return {active = true, points = #q.points, index = q.index, phase = q.phase}
+end
+
+function M.stop_patrol(cid)
+  if not storage.patrol_queues[cid] then return {stopped = false} end
+  storage.patrol_queues[cid] = nil
+  local c = valid_companion(cid)
+  if c then
+    c.entity.shooting_state = {state = defines.shooting.not_shooting}
+    c.entity.walking_state = {walking = false}
+  end
+  return {stopped = true}
 end
 
 return M

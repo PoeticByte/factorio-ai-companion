@@ -12,6 +12,12 @@ local function get_active_task(id)
       return "combat", {targets_remaining = s.targets_remaining, current_target = s.current_target}
     end
   end
+  if storage.patrol_queues and storage.patrol_queues[id] then
+    local s = queues.get_patrol_status(id)
+    if s.active then
+      return "patrolling", {points = s.points, index = s.index, phase = s.phase}
+    end
+  end
   if storage.harvest_queues and storage.harvest_queues[id] then
     local s = queues.get_harvest_status(id)
     if s.active then
