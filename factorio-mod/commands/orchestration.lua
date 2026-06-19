@@ -15,8 +15,10 @@ function M.init()
 end
 
 function M.entity_key(e)
-  if e and e.valid and e.unit_number then return "e:" .. e.unit_number end
-  return nil
+  if not (e and e.valid) then return nil end
+  if e.unit_number then return "e:" .. e.unit_number end
+  -- resources / trees / cliffs have no unit_number — key them by tile instead
+  return "p:" .. math.floor(e.position.x) .. "," .. math.floor(e.position.y)
 end
 
 function M.pos_key(pos)
