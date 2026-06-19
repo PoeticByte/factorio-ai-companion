@@ -1,6 +1,7 @@
 -- AI Companion v0.9.0 - Tick-based queue system
 local u = require("commands.init")
 local nav = require("commands.navigation")
+local orch = require("commands.orchestration")
 
 local M = {}
 
@@ -34,7 +35,7 @@ local function process_queue(queue_name, processor)
     end
   end
 
-  for _, cid in ipairs(to_remove) do queues[cid] = nil end
+  for _, cid in ipairs(to_remove) do queues[cid] = nil; orch.release_all(cid) end
 end
 
 function M.init()
@@ -95,7 +96,8 @@ function M.start_mining_next(cid)
 
   while #q.entities > 0 do
     local entity = table.remove(q.entities, 1)
-    if entity and entity.valid then
+    if entity and entity.valid and not orch.is_reserved(orch.entity_key(entity), cid) then
+      orch.reserve(cid, orch.entity_key(entity), "resource", entity)
       c.entity.update_selected_entity(entity.position)
       c.entity.mining_state = {mining = true, position = entity.position}
       q.current = {
@@ -452,13 +454,15 @@ function M.tick_ghost_build_queues()
       q.current = nil
       local best, bd = nil, math.huge
       for _, g in ipairs(q.ghosts) do
-        if g.valid and g.name == "entity-ghost" and not q.blocked_set[g.unit_number] then
+        if g.valid and g.name == "entity-ghost" and not q.blocked_set[g.unit_number]
+           and not orch.is_reserved(orch.entity_key(g), cid) then
           local d = u.distance(c.entity.position, g.position)
           if d < bd then bd, best = d, g end
         end
       end
       if not best then return true end   -- nothing left buildable -> done
       q.current = best
+      orch.reserve(cid, orch.entity_key(best), "ghost", best)
       q.approaching = false
     end
 
@@ -878,6 +882,7 @@ function M.start_nest_clear(cid, center, radius)
   local c = valid_companion(cid)
   if not c then return {error = "Invalid companion"} end
   storage.nest_clear_queues = storage.nest_clear_queues or {}   -- save-migration guard
+  orch.reserve(cid, orch.pos_key(center), "nest")
   storage.nest_clear_queues[cid] = {
     center = center, radius = radius or 32,
     phase = "advance", moving = false, cooldown = 0, target = nil, killed = 0,

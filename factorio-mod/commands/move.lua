@@ -1,6 +1,7 @@
 -- AI Companion v0.7.0 - Move commands (pathfinding via commands.navigation)
 local u = require("commands.init")
 local nav = require("commands.navigation")
+local orch = require("commands.orchestration")
 
 commands.add_command("fac_move_to", nil, function(cmd)
   u.safe_command(function()
@@ -35,6 +36,7 @@ commands.add_command("fac_move_stop", nil, function(cmd)
     if storage.patrol_queues then storage.patrol_queues[id] = nil end  -- moving cancels patrol
     if storage.nest_clear_queues then storage.nest_clear_queues[id] = nil end
     if storage.repair_queues then storage.repair_queues[id] = nil end
+    orch.release_all(id)
     nav.stop(id)
     u.json_response({id = id, stopped = true})
   end)

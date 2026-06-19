@@ -2,6 +2,8 @@
 local u = require("commands.init")
 local queues = require("commands.queues")
 local nav = require("commands.navigation")
+local orch = require("commands.orchestration")
+local roles = require("commands.roles")
 
 -- Get version dynamically from mod info
 local MOD_VERSION = script.active_mods["ai-companion"] or "unknown"
@@ -16,6 +18,8 @@ local function init_storage()
   storage.companion_markers = storage.companion_markers or {}
   queues.init()
   nav.init()
+  orch.init()
+  roles.init()
 end
 
 local function cleanup_messages()
@@ -189,6 +193,8 @@ script.on_nth_tick(5, function(ev)
   queues.tick_patrol_queues()
   queues.tick_nest_clear_queues()
   queues.tick_repair_queues()
+  orch.tick_reservations()
+  if ev.tick % 30 == 0 then roles.tick_roles() end
   -- Process walking queues via the pathfinding navigator
   if not storage.walking_queues then return end
   for cid, q in pairs(storage.walking_queues) do

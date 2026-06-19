@@ -52,3 +52,50 @@ commands.add_command("fac_world_scan", nil, function(cmd)
     u.json_response({id = id, entities = result, count = #result})
   end)
 end)
+
+-- Production survey of an area (Phase 5b): resource patches by type (+amount) and
+-- friendly buildings by type. Gives the LLM planner a picture of "what's here".
+commands.add_command("fac_world_survey", nil, function(cmd)
+  u.safe_command(function()
+    local args = u.parse_args("^(%S+)%s*(%d*)$", cmd.parameter)
+    local id, c = u.find_companion(args[1])
+    if not id then u.error_response("Companion not found"); return end
+    local radius = tonumber(args[2]) or 100
+    local surf, pos = c.entity.surface, c.entity.position
+    local area = {{pos.x - radius, pos.y - radius}, {pos.x + radius, pos.y + radius}}
+    local res = {}
+    for _, e in ipairs(surf.find_entities_filtered{area = area, type = "resource"}) do
+      local r = res[e.name] or {patches = 0, amount = 0}
+      r.patches = r.patches + 1
+      r.amount = r.amount + (e.amount or 0)
+      res[e.name] = r
+    end
+    local builds = {}
+    for _, e in ipairs(surf.find_entities_filtered{area = area, force = c.entity.force}) do
+      if e.type ~= "character" then builds[e.type] = (builds[e.type] or 0) + 1 end
+    end
+    u.json_response({id = id, radius = radius, resources = res, buildings = builds})
+  end)
+end)
+
+-- Recipe dependency tree (Phase 5b): what ingredients a recipe needs, recursively.
+commands.add_command("fac_recipe_deps", nil, function(cmd)
+  u.safe_command(function()
+    local args = u.parse_args("^(%S+)%s*(%d*)$", cmd.parameter)
+    local recipe = args[1]
+    local depth = tonumber(args[2]) or 2
+    if not prototypes.recipe[recipe] then u.error_response("Unknown recipe: " .. tostring(recipe)); return end
+    local function expand(rname, d)
+      local p = prototypes.recipe[rname]
+      if not p then return nil end
+      local out = {}
+      for _, ing in pairs(p.ingredients) do
+        local entry = {name = ing.name, amount = ing.amount}
+        if d > 0 and prototypes.recipe[ing.name] then entry.via = expand(ing.name, d - 1) end
+        out[#out + 1] = entry
+      end
+      return out
+    end
+    u.json_response({recipe = recipe, ingredients = expand(recipe, depth)})
+  end)
+end)

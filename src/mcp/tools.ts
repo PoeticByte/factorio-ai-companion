@@ -470,6 +470,90 @@ export const TOOLS: Record<string, {
     params: { companionId: { type: "number", required: true } }
   },
 
+  // Orchestration (Phase 5a: task-board / reservations)
+  reserve: {
+    desc: "Claim a target so other companions skip it (key 'e:<unit_number>' for an entity or 'p:<x>,<y>' for a position/area). Mostly automatic inside mining/build/nest skills; exposed for manual or LLM-side coordination.",
+    rcon: "/fac_reserve {companionId} {key}",
+    params: {
+      companionId: { type: "number", required: true },
+      key: { type: "string", desc: "Reservation key, e.g. p:10,20 or e:1234", required: true }
+    }
+  },
+  release: {
+    desc: "Release a reservation this companion holds.",
+    rcon: "/fac_release {companionId} {key}",
+    params: {
+      companionId: { type: "number", required: true },
+      key: { type: "string", required: true }
+    }
+  },
+  reservations: {
+    desc: "List all active reservations (key -> companion id).",
+    rcon: "/fac_reservations",
+    params: {}
+  },
+
+  // Standing roles (Phase 5c: auto-response)
+  assign_role: {
+    desc: "Assign a standing role over an area (auto-triggers a skill when warranted): guard (nest_clear when enemies enter), refueler (refuel low burners; item=fuel), maintainer (repair/refill; item=turret ammo). Companion must carry its own supplies. Persists across saves.",
+    rcon: "/fac_assign_role {companionId} {role} {x} {y} {radius} {item}",
+    params: {
+      companionId: { type: "number", required: true },
+      role: { type: "string", desc: "guard | refueler | maintainer", required: true },
+      x: { type: "number", required: true },
+      y: { type: "number", required: true },
+      radius: { type: "number", default: 24 },
+      item: { type: "string", desc: "fuel item (refueler) or turret ammo (maintainer)", default: "" }
+    }
+  },
+  clear_role: {
+    desc: "Clear a companion's standing role.",
+    rcon: "/fac_clear_role {companionId}",
+    params: { companionId: { type: "number", required: true } }
+  },
+  roles: {
+    desc: "List all standing roles.",
+    rcon: "/fac_roles",
+    params: {}
+  },
+
+  // Planning queries + task tree (Phase 5b)
+  world_survey: {
+    desc: "Survey an area: resource patches by type (count + amount) and friendly buildings by type. Planning input for goal decomposition.",
+    rcon: "/fac_world_survey {companionId} {radius}",
+    params: {
+      companionId: { type: "number", required: true },
+      radius: { type: "number", default: 100 }
+    }
+  },
+  recipe_deps: {
+    desc: "Recipe dependency tree: ingredients a recipe needs, recursively to depth.",
+    rcon: "/fac_recipe_deps {recipe} {depth}",
+    params: {
+      recipe: { type: "string", desc: "Recipe name, e.g. electronic-circuit", required: true },
+      depth: { type: "number", default: 2 }
+    }
+  },
+  plan_create: {
+    desc: "Create a persistent task plan. Param is JSON {\"goal\":\"...\",\"steps\":[\"s1\",\"s2\"]}. Returns plan id; survives saves.",
+    rcon: "/fac_plan_create {plan}",
+    params: {
+      plan: { type: "string", desc: "JSON {goal, steps[]}", required: true }
+    }
+  },
+  plan_status: {
+    desc: "Get a plan's progress, or list all plans if planId omitted/0.",
+    rcon: "/fac_plan_status {planId}",
+    params: {
+      planId: { type: "number", desc: "Plan id; 0 lists all", default: 0 }
+    }
+  },
+  plan_step_done: {
+    desc: "Mark the plan's current step done and advance to the next.",
+    rcon: "/fac_plan_step_done {planId}",
+    params: { planId: { type: "number", required: true } }
+  },
+
   // Research
   research_get: {
     desc: "Get current research status",

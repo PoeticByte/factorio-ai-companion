@@ -1,5 +1,6 @@
 -- AI Companion v0.7.0 - Companion commands
 local u = require("commands.init")
+local orch = require("commands.orchestration")
 
 commands.add_command("fac_companion_list", nil, function(cmd)
   u.safe_command(function()
@@ -196,6 +197,7 @@ commands.add_command("fac_companion_stop_all", nil, function(cmd)
     end
     c.entity.walking_state = {walking = false}
     c.entity.shooting_state = {state = defines.shooting.not_shooting}
+    orch.release_all(id)
     u.json_response({id = id, stopped = stopped})
   end)
 end)
