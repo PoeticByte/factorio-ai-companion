@@ -99,3 +99,56 @@ commands.add_command("fac_recipe_deps", nil, function(cmd)
     u.json_response({recipe = recipe, ingredients = expand(recipe, depth)})
   end)
 end)
+
+-- Factory doctor (Pillar I): scan crafting machines + drills in an area, compute
+-- each item's production vs consumption rate (items/sec), and flag bottlenecks
+-- (consumed faster than produced). Rates use live crafting_speed (modules/beacons).
+commands.add_command("fac_factory_analyze", nil, function(cmd)
+  u.safe_command(function()
+    local args = u.parse_args("^(%S+)%s*(%d*)$", cmd.parameter)
+    local id, c = u.find_companion(args[1])
+    if not id then u.error_response("Companion not found"); return end
+    local radius = tonumber(args[2]) or 50
+    local surf, pos, force = c.entity.surface, c.entity.position, c.entity.force
+    local area = {{pos.x - radius, pos.y - radius}, {pos.x + radius, pos.y + radius}}
+    local production, consumption, machines = {}, {}, 0
+
+    for _, m in ipairs(surf.find_entities_filtered{area = area, type = {"assembling-machine", "furnace"}, force = force}) do
+      local recipe = m.valid and m.get_recipe()
+      if recipe and m.crafting_speed and recipe.energy and recipe.energy > 0 then
+        machines = machines + 1
+        local crafts = m.crafting_speed / recipe.energy   -- crafts/sec
+        for _, prod in ipairs(recipe.products) do
+          local amt = prod.amount or ((prod.amount_min and prod.amount_max) and (prod.amount_min + prod.amount_max) / 2 or 0)
+          amt = amt * (prod.probability or 1)
+          production[prod.name] = (production[prod.name] or 0) + crafts * amt
+        end
+        for _, ing in ipairs(recipe.ingredients) do
+          consumption[ing.name] = (consumption[ing.name] or 0) + crafts * ing.amount
+        end
+      end
+    end
+
+    for _, d in ipairs(surf.find_entities_filtered{area = area, type = "mining-drill", force = force}) do
+      if d.valid and d.mining_target and d.mining_target.valid then
+        machines = machines + 1
+        local res = d.mining_target.name
+        production[res] = (production[res] or 0) + (d.prototype.mining_speed or 0.5)  -- approx items/sec
+      end
+    end
+
+    local function r2(x) return math.floor(x * 100) / 100 end
+    local net, bottlenecks, seen = {}, {}, {}
+    for name in pairs(production) do seen[name] = true end
+    for name in pairs(consumption) do seen[name] = true end
+    for name in pairs(seen) do
+      local p, cns = production[name] or 0, consumption[name] or 0
+      net[name] = r2(p - cns)
+      if cns > 0 and (p - cns) < -0.01 then
+        bottlenecks[#bottlenecks + 1] = {item = name, produced = r2(p), consumed = r2(cns), deficit = r2(cns - p)}
+      end
+    end
+    table.sort(bottlenecks, function(a, b) return a.deficit > b.deficit end)
+    u.json_response({id = id, radius = radius, machines = machines, net = net, bottlenecks = bottlenecks})
+  end)
+end)

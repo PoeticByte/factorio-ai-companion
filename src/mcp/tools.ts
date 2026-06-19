@@ -534,6 +534,14 @@ export const TOOLS: Record<string, {
       depth: { type: "number", default: 2 }
     }
   },
+  factory_analyze: {
+    desc: "Factory doctor: scan crafting machines + drills in radius, compute each item's production vs consumption rate (items/sec from live crafting_speed), and flag bottlenecks (consumed faster than produced). Answers \"what's my factory bottlenecked on?\".",
+    rcon: "/fac_factory_analyze {companionId} {radius}",
+    params: {
+      companionId: { type: "number", required: true },
+      radius: { type: "number", desc: "Scan radius", default: 50 }
+    }
+  },
   plan_create: {
     desc: "Create a persistent task plan. Param is JSON {\"goal\":\"...\",\"steps\":[\"s1\",\"s2\"]}. Returns plan id; survives saves.",
     rcon: "/fac_plan_create {plan}",
