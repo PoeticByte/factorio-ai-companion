@@ -91,6 +91,19 @@ local function inventory_summary(c, top_n)
   return {items = top, used = #items, slots = #inv}
 end
 
+-- Equipped gun + total ammo. These live in the character_guns/character_ammo
+-- inventories, which the main-inventory summary above can't see.
+local function weapon_summary(c)
+  local e = c.entity
+  local guns = e.get_inventory(defines.inventory.character_guns)
+  local ammo = e.get_inventory(defines.inventory.character_ammo)
+  local gun
+  if guns then for _, g in pairs(guns.get_contents()) do gun = g.name; break end end
+  local n = 0
+  if ammo then for _, a in pairs(ammo.get_contents()) do n = n + a.count end end
+  return {gun = gun, ammo = n}
+end
+
 commands.add_command("fac_companion_status", nil, function(cmd)
   u.safe_command(function()
     local id, c = u.find_companion(cmd.parameter)
@@ -103,10 +116,12 @@ commands.add_command("fac_companion_status", nil, function(cmd)
       name = c.name,
       state = state,
       task = task,
-      nav = storage.nav_last and storage.nav_last[id] or nil,
-      position = {x = math.floor(pos.x * 10) / 10, y = math.floor(pos.y * 10) / 10},
+      -- Only surface nav while actually walking; nav_last is stale once idle.
+      nav = (storage.walking_queues and storage.walking_queues[id] and storage.nav_last and storage.nav_last[id]) or nil,
+      position = {x = math.floor(pos.x + 0.5), y = math.floor(pos.y + 0.5)},
       health = {cur = math.floor(e.health), max = math.floor(e.max_health), pct = math.floor(e.health / e.max_health * 100)},
-      inventory = inventory_summary(c, 5)
+      inventory = inventory_summary(c, 5),
+      weapon = weapon_summary(c)
     })
   end)
 end)
