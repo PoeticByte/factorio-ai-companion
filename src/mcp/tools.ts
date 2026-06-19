@@ -568,23 +568,36 @@ export const TOOLS: Record<string, {
     }
   },
   plan_create: {
-    desc: "Create a persistent task plan. Param is JSON {\"goal\":\"...\",\"steps\":[\"s1\",\"s2\"]}. Returns plan id; survives saves.",
+    desc: "Create a persistent task plan (survives saves). Param is JSON {goal, auto?, steps[]}. A step is plain text (manual; advance with plan_step_done) OR {desc, action} where action is auto-executed by the colony when auto=true (or after plan_run). Action types: " +
+      "{type:'mine', target:{x,y}, resource:'iron-ore', qty:50} — walk to patch + mine; " +
+      "{type:'craft', recipe:'iron-gear-wheel', qty:20}; " +
+      "{type:'build_line', entity:'transport-belt', x, y, dir:0..3, count:10} (single machine = count 1, builds via ghosts the companion walks to); " +
+      "{type:'haul', item:'iron-ore', source:{x,y}, dest:{x,y}, quota:200}; " +
+      "{type:'research', tech:'automation'} (force-level, no companion). Add action.cid to pin a step to a specific companion. Steps run sequentially; a free companion is auto-claimed per step.",
     rcon: "/fac_plan_create {plan}",
     params: {
-      plan: { type: "string", desc: "JSON {goal, steps[]}", required: true }
+      plan: { type: "string", desc: "JSON {goal, auto?, steps[]} — see desc for action schema", required: true }
     }
   },
   plan_status: {
-    desc: "Get a plan's progress, or list all plans if planId omitted/0.",
+    desc: "Get a plan's progress (with per-step status/action/assigned companion), or list all plans if planId omitted/0.",
     rcon: "/fac_plan_status {planId}",
     params: {
       planId: { type: "number", desc: "Plan id; 0 lists all", default: 0 }
     }
   },
   plan_step_done: {
-    desc: "Mark the plan's current step done and advance to the next.",
+    desc: "Manually mark the plan's current step done and advance (for text/manual steps).",
     rcon: "/fac_plan_step_done {planId}",
     params: { planId: { type: "number", required: true } }
+  },
+  plan_run: {
+    desc: "Toggle a plan's auto-execution. on = the colony self-drives the active step (claim free companion, reserve, build/mine/craft/haul/research, advance). off = pause + halt the in-flight step.",
+    rcon: "/fac_plan_run {planId} {state}",
+    params: {
+      planId: { type: "number", required: true },
+      state: { type: "string", desc: "on|off (default on)", default: "on" }
+    }
   },
 
   // Research

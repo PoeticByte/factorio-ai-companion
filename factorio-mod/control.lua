@@ -195,6 +195,7 @@ script.on_nth_tick(5, function(ev)
   queues.tick_repair_queues()
   orch.tick_reservations()
   if ev.tick % 30 == 0 then roles.tick_roles() end
+  if ev.tick % 30 == 0 then orch.tick_plans() end
   -- Process walking queues via the pathfinding navigator
   if not storage.walking_queues then return end
   for cid, q in pairs(storage.walking_queues) do
