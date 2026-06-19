@@ -12,6 +12,18 @@ local function get_active_task(id)
       return "combat", {targets_remaining = s.targets_remaining, current_target = s.current_target}
     end
   end
+  if storage.nest_clear_queues and storage.nest_clear_queues[id] then
+    local s = queues.get_nest_clear_status(id)
+    if s.active then
+      return "clearing_nest", {phase = s.phase, killed = s.killed, target = s.target}
+    end
+  end
+  if storage.repair_queues and storage.repair_queues[id] then
+    local s = queues.get_repair_status(id)
+    if s.active then
+      return "repairing", {repaired = s.repaired, filled = s.filled, ammo = s.ammo}
+    end
+  end
   if storage.patrol_queues and storage.patrol_queues[id] then
     local s = queues.get_patrol_status(id)
     if s.active then

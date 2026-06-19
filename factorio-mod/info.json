@@ -1,10 +1,10 @@
 {
   "name": "ai-companion",
-  "version": "0.14.0",
+  "version": "0.15.0",
   "title": "AI Companion",
   "author": "lveillard",
   "contact": "lvei.goes553@aleeas.com",
   "factorio_version": "2.0",
-  "description": "AI companions with 63 RCON commands. Pathfinding nav. Blueprint construction. Logistics (haul/refuel). Unified status. Combat. Hybrid mining. FLE-inspired queues. Factorio 2.x compatible.",
+  "description": "AI companions with 65 RCON commands. Pathfinding nav. Blueprint construction. Logistics (haul/refuel). Combat crew (patrol/nest-clear/repair). Unified status. Hybrid mining. FLE-inspired queues. Factorio 2.x compatible.",
   "dependencies": ["base >= 2.0"]
 }

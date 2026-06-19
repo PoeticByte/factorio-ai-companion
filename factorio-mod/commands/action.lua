@@ -77,6 +77,39 @@ commands.add_command("fac_action_patrol", nil, function(cmd)
   end)
 end)
 
+-- Clear a nest area (Phase 4b): advance + shoot, retreat on low HP / dry ammo,
+-- recover via natural regen + own ammo, re-engage. Out of ammo -> stops + reports.
+commands.add_command("fac_action_nest_clear", nil, function(cmd)
+  u.safe_command(function()
+    local args = u.parse_args("^(%S+)%s+(%-?%d+%.?%d*)%s+(%-?%d+%.?%d*)%s*(%d*)$", cmd.parameter)
+    local id = u.find_companion(args[1])
+    if not id then u.error_response("Companion not found"); return end
+    local x, y = tonumber(args[2]), tonumber(args[3])
+    if not x or not y then u.error_response("Invalid coordinates"); return end
+    local radius = tonumber(args[4]) or 32
+    local res = queues.start_nest_clear(id, {x = x, y = y}, radius)
+    res.id = id
+    u.json_response(res)
+  end)
+end)
+
+-- Maintain an area (Phase 4c): repair-pack damaged friendly builds + refill
+-- ammo-turrets, all from the companion's own inventory. Endless until supplies run out.
+commands.add_command("fac_action_repair", nil, function(cmd)
+  u.safe_command(function()
+    local args = u.parse_args("^(%S+)%s+(%-?%d+%.?%d*)%s+(%-?%d+%.?%d*)%s*(%d*)%s*(%S*)$", cmd.parameter)
+    local id = u.find_companion(args[1])
+    if not id then u.error_response("Companion not found"); return end
+    local x, y = tonumber(args[2]), tonumber(args[3])
+    if not x or not y then u.error_response("Invalid coordinates"); return end
+    local radius = tonumber(args[4]) or 24
+    local ammo = (args[5] ~= "" and args[5]) or nil
+    local res = queues.start_repair(id, {x = x, y = y}, radius, ammo)
+    res.id = id
+    u.json_response(res)
+  end)
+end)
+
 commands.add_command("fac_action_wololo", nil, function(cmd)
   u.safe_command(function()
     local id, c = u.find_companion(cmd.parameter)

@@ -182,11 +182,20 @@ commands.add_command("fac_companion_stop_all", nil, function(cmd)
       storage.patrol_queues[id] = nil
       stopped[#stopped + 1] = "patrol"
     end
+    if storage.nest_clear_queues and storage.nest_clear_queues[id] then
+      storage.nest_clear_queues[id] = nil
+      stopped[#stopped + 1] = "nest_clear"
+    end
+    if storage.repair_queues and storage.repair_queues[id] then
+      storage.repair_queues[id] = nil
+      stopped[#stopped + 1] = "repair"
+    end
     if storage.walking_queues and storage.walking_queues[id] then
       storage.walking_queues[id] = nil
       stopped[#stopped + 1] = "walk"
     end
     c.entity.walking_state = {walking = false}
+    c.entity.shooting_state = {state = defines.shooting.not_shooting}
     u.json_response({id = id, stopped = stopped})
   end)
 end)

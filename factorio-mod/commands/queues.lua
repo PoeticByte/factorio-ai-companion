@@ -47,6 +47,8 @@ function M.init()
   storage.refuel_queues = storage.refuel_queues or {}
   storage.logistics_last = storage.logistics_last or {}
   storage.patrol_queues = storage.patrol_queues or {}
+  storage.nest_clear_queues = storage.nest_clear_queues or {}
+  storage.repair_queues = storage.repair_queues or {}
 end
 
 -- ============ HARVEST ============
@@ -835,6 +837,266 @@ function M.stop_patrol(cid)
     c.entity.walking_state = {walking = false}
   end
   return {stopped = true}
+end
+
+-- ============ NEST CLEAR (Phase 4b: advance + retreat-on-low-HP, own resources) ============
+-- Fair-play offense: advance on a nest area and shoot spawners/worms/biters in range;
+-- when HP drops (or ammo runs dry) flee from the enemy centroid, recover via natural
+-- regen + own ammo, then re-engage. Out of ammo -> report "out of ammo" and stop.
+
+local RETREAT_HP    = 0.35   -- flee below this HP fraction
+local RESUME_HP     = 0.75   -- re-engage once HP recovers above this
+local RETREAT_DIST  = 28     -- flee this far from the enemy centroid
+local THREAT_RADIUS = 16     -- enemies within this of us = still in danger
+
+local function ammo_empty(e)
+  local a = e.get_inventory(defines.inventory.character_ammo)
+  return (not a) or a.is_empty()
+end
+
+-- Average position of nearby enemies, to flee directly away from them.
+local function enemy_centroid(e, radius)
+  local foes = e.surface.find_entities_filtered{position = e.position, radius = radius,
+    force = "enemy", type = {"unit", "unit-spawner", "turret"}}
+  if #foes == 0 then return nil end
+  local ax, ay = 0, 0
+  for _, f in ipairs(foes) do ax, ay = ax + f.position.x, ay + f.position.y end
+  return {x = ax / #foes, y = ay / #foes}
+end
+
+-- Nearest hostile within a radius (for firing back while retreating/recovering).
+local function nearest_foe(e, radius)
+  local best, bd = nil, math.huge
+  for _, f in ipairs(e.surface.find_entities_filtered{position = e.position, radius = radius,
+      force = "enemy", type = {"unit", "unit-spawner", "turret"}}) do
+    if f.valid then local d = u.distance(e.position, f.position); if d < bd then bd, best = d, f end end
+  end
+  return best
+end
+
+function M.start_nest_clear(cid, center, radius)
+  local c = valid_companion(cid)
+  if not c then return {error = "Invalid companion"} end
+  storage.nest_clear_queues = storage.nest_clear_queues or {}   -- save-migration guard
+  storage.nest_clear_queues[cid] = {
+    center = center, radius = radius or 32,
+    phase = "advance", moving = false, cooldown = 0, target = nil, killed = 0,
+  }
+  return {started = true, center = center, radius = radius or 32}
+end
+
+function M.tick_nest_clear_queues()
+  process_queue("nest_clear_queues", function(cid, q, c)
+    local e = c.entity
+    if q.cooldown > 0 then q.cooldown = q.cooldown - TICK_INTERVAL end
+    local hp = e.health / e.max_health
+
+    -- Break off advancing when HP gets low or we run dry on ammo.
+    if q.phase == "advance" and (hp < RETREAT_HP or ammo_empty(e)) then
+      q.phase = "retreat"; q.moving = false
+      storage.walking_queues[cid] = nil
+      e.shooting_state = {state = defines.shooting.not_shooting}
+    end
+
+    if q.phase == "retreat" then
+      -- Fire back at the nearest chaser while backing off (don't just run and die).
+      local foe = nearest_foe(e, ATTACK_RANGE + 4)
+      if foe and q.cooldown <= 0 then
+        e.shooting_state = {state = defines.shooting.shooting_enemies, position = foe.position}
+        q.cooldown = ATTACK_COOLDOWN
+      elseif not foe then
+        e.shooting_state = {state = defines.shooting.not_shooting}
+      end
+
+      local cen = enemy_centroid(e, THREAT_RADIUS + 10)
+      if not cen then
+        q.phase = "recover"; q.moving = false; q.retreat_from = nil
+        e.shooting_state = {state = defines.shooting.not_shooting}
+      elseif not q.moving then
+        q.retreat_from = q.retreat_from or {x = e.position.x, y = e.position.y}
+        local dx, dy = e.position.x - cen.x, e.position.y - cen.y
+        local len = math.sqrt(dx*dx + dy*dy); if len < 0.1 then dx, dy, len = 1, 0, 1 end
+        nav.go_to(cid, {x = e.position.x + dx/len*RETREAT_DIST, y = e.position.y + dy/len*RETREAT_DIST}, {radius = 3})
+        q.moving = true
+      elseif not storage.walking_queues[cid] then
+        q.moving = false
+        -- Recover once we've opened real distance OR shaken them off (never flee forever).
+        local far = q.retreat_from and u.distance(e.position, q.retreat_from) >= RETREAT_DIST - 4
+        if far or not enemy_centroid(e, THREAT_RADIUS) then
+          q.phase = "recover"; q.retreat_from = nil
+        end
+      end
+      return false
+
+    elseif q.phase == "recover" then
+      if ammo_empty(e) then return logistics_done(cid, "nest_clear", "out of ammo", q.killed) end
+      -- If chasers caught up, fight back; if still critically low while engaged, retreat again.
+      local foe = nearest_foe(e, ATTACK_RANGE + 2)
+      if foe then
+        if q.cooldown <= 0 then
+          e.shooting_state = {state = defines.shooting.shooting_enemies, position = foe.position}
+          q.cooldown = ATTACK_COOLDOWN
+        end
+        if hp < RETREAT_HP then q.phase = "retreat"; q.moving = false end
+      else
+        e.shooting_state = {state = defines.shooting.not_shooting}
+      end
+      if hp >= RESUME_HP then q.phase = "advance"; q.moving = false; q.target = nil end
+      return false
+    end
+
+    -- phase == advance: (re)acquire nearest target — spawners/worms first, then units.
+    if not q.target or not q.target.valid then
+      if q.target then q.killed = q.killed + 1 end   -- had a target, now gone = a kill
+      q.target = nil
+      local found = e.surface.find_entities_filtered{position = q.center, radius = q.radius,
+        force = "enemy", type = {"unit-spawner", "turret", "unit"}}
+      local best, bd, spawner, sd = nil, math.huge, nil, math.huge
+      for _, f in ipairs(found) do
+        if f.valid then
+          local d = u.distance(e.position, f.position)
+          if f.type ~= "unit" and d < sd then sd, spawner = d, f end
+          if d < bd then bd, best = d, f end
+        end
+      end
+      q.target = spawner or best
+      q.moving = false
+      if not q.target then return logistics_done(cid, "nest_clear", "cleared", q.killed) end
+    end
+
+    local t = q.target
+    if u.distance(e.position, t.position) <= ATTACK_RANGE then
+      storage.walking_queues[cid] = nil
+      e.walking_state = {walking = false}
+      if q.cooldown <= 0 then
+        e.shooting_state = {state = defines.shooting.shooting_enemies, position = t.position}
+        q.cooldown = ATTACK_COOLDOWN
+      end
+    else
+      e.shooting_state = {state = defines.shooting.not_shooting}
+      if travel(cid, c, t.position, ATTACK_RANGE - 1, q) == nil then q.target = nil end
+    end
+    return false
+  end)
+end
+
+function M.get_nest_clear_status(cid)
+  local q = storage.nest_clear_queues[cid]
+  if not q then return {active = false} end
+  return {active = true, phase = q.phase, killed = q.killed,
+          target = q.target and q.target.valid and q.target.name or nil}
+end
+
+function M.stop_nest_clear(cid)
+  local q = storage.nest_clear_queues[cid]
+  if not q then return {stopped = false} end
+  local killed = q.killed
+  storage.nest_clear_queues[cid] = nil
+  local c = valid_companion(cid)
+  if c then
+    c.entity.shooting_state = {state = defines.shooting.not_shooting}
+    c.entity.walking_state = {walking = false}
+  end
+  return {stopped = true, killed = killed}
+end
+
+-- ============ REPAIR (Phase 4c: refill ammo-turrets + repair-pack damaged builds) ============
+-- Fair-play maintenance: patrol an area, mend damaged friendly structures with
+-- repair-packs and top up ammo-turrets, all from the companion's own inventory.
+-- Endless until supplies run out.
+
+local REPAIR_PACK_HEAL = 300   -- HP one repair-pack restores (vanilla, approx)
+local REPAIR_COOLDOWN  = 300   -- ticks before re-servicing the same entity
+
+function M.start_repair(cid, center, radius, ammo)
+  local c = valid_companion(cid)
+  if not c then return {error = "Invalid companion"} end
+  storage.repair_queues = storage.repair_queues or {}   -- save-migration guard
+  storage.repair_queues[cid] = {
+    center = center, radius = radius or 24, ammo = ammo,
+    moving = false, current = nil, kind = nil, serviced = {},
+    repaired = 0, filled = 0,
+  }
+  return {started = true, center = center, radius = radius or 24, ammo = ammo}
+end
+
+function M.tick_repair_queues()
+  process_queue("repair_queues", function(cid, q, c)
+    local e = c.entity
+    local reach = e.reach_distance or 10
+    local inv = e.get_main_inventory()
+    local packs = inv.get_item_count("repair-pack")
+    local ammo_have = q.ammo and inv.get_item_count(q.ammo) or 0
+
+    if not q.current or not q.current.valid then
+      q.current = nil
+      if packs == 0 and ammo_have == 0 then
+        return logistics_done(cid, "repair", "out of supplies", q.repaired + q.filled)
+      end
+      -- Nearest entity needing service: damaged build (pack) or low ammo-turret (ammo).
+      local cands = e.surface.find_entities_filtered{position = q.center, radius = q.radius, force = e.force}
+      local best, bd, kind = nil, math.huge, nil
+      for _, x in ipairs(cands) do
+        if x.valid and x ~= e and x.type ~= "character" then
+          local last = q.serviced[x.unit_number]
+          if (not last) or (game.tick - last) > REPAIR_COOLDOWN then
+            local d = u.distance(e.position, x.position)
+            if packs > 0 and x.health and x.max_health and x.health < x.max_health - 1 and d < bd then
+              bd, best, kind = d, x, "repair"
+            elseif ammo_have > 0 and x.type == "ammo-turret" then
+              local ti = x.get_inventory(defines.inventory.turret_ammo)
+              if ti and ti.can_insert{name = q.ammo, count = 1} and d < bd then
+                bd, best, kind = d, x, "ammo"
+              end
+            end
+          end
+        end
+      end
+      if not best then return false end   -- nothing needs service right now; keep watching
+      q.current, q.kind = best, kind
+      q.moving = false
+    end
+
+    local r = travel(cid, c, q.current.position, reach, q)
+    if r == true then
+      local x = q.current
+      if q.kind == "repair" and x.valid and x.health then
+        local need = math.ceil((x.max_health - x.health) / REPAIR_PACK_HEAL)
+        local use = math.min(need, inv.get_item_count("repair-pack"))
+        if use > 0 then
+          x.health = math.min(x.max_health, x.health + use * REPAIR_PACK_HEAL)
+          inv.remove{name = "repair-pack", count = use}
+          q.repaired = q.repaired + 1
+        end
+      elseif q.kind == "ammo" and x.valid then
+        local ti = x.get_inventory(defines.inventory.turret_ammo)
+        if ti then
+          local want = math.min(10, inv.get_item_count(q.ammo))
+          local ins = ti.insert{name = q.ammo, count = want}
+          if ins > 0 then inv.remove{name = q.ammo, count = ins}; q.filled = q.filled + ins end
+        end
+      end
+      q.serviced[q.current.unit_number] = game.tick
+      q.current = nil
+    elseif r == nil then
+      q.serviced[q.current.unit_number] = game.tick   -- unreachable, skip
+      q.current = nil
+    end
+    return false
+  end)
+end
+
+function M.get_repair_status(cid)
+  local q = storage.repair_queues[cid]
+  if not q then return {active = false} end
+  return {active = true, repaired = q.repaired, filled = q.filled, ammo = q.ammo}
+end
+
+function M.stop_repair(cid)
+  local q = storage.repair_queues[cid]
+  if not q then return {stopped = false} end
+  storage.repair_queues[cid] = nil
+  return {stopped = true, repaired = q.repaired, filled = q.filled}
 end
 
 return M

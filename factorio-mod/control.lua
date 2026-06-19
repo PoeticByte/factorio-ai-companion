@@ -187,6 +187,8 @@ script.on_nth_tick(5, function(ev)
   queues.tick_haul_queues()
   queues.tick_refuel_queues()
   queues.tick_patrol_queues()
+  queues.tick_nest_clear_queues()
+  queues.tick_repair_queues()
   -- Process walking queues via the pathfinding navigator
   if not storage.walking_queues then return end
   for cid, q in pairs(storage.walking_queues) do

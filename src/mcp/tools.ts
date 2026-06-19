@@ -443,6 +443,27 @@ export const TOOLS: Record<string, {
       points: { type: "string", desc: "JSON array of {x,y} points", required: true }
     }
   },
+  action_nest_clear: {
+    desc: "Clear a nest area (Phase 4b): advance and shoot spawners/worms/biters in range, retreat when HP drops or ammo runs dry, recover (natural regen + own ammo), then re-engage. Out of ammo -> stops and reports. Fair-play: own resources only. Stop with companion_stop_all/move_stop.",
+    rcon: "/fac_action_nest_clear {companionId} {x} {y} {radius}",
+    params: {
+      companionId: { type: "number", required: true },
+      x: { type: "number", desc: "Nest center X", required: true },
+      y: { type: "number", desc: "Nest center Y", required: true },
+      radius: { type: "number", desc: "Scan radius for targets", default: 32 }
+    }
+  },
+  action_repair: {
+    desc: "Maintain an area (Phase 4c): repair-pack damaged friendly structures and refill ammo-turrets from the companion's own inventory. Endless until supplies run out. Stop with companion_stop_all/move_stop.",
+    rcon: "/fac_action_repair {companionId} {x} {y} {radius} {ammo}",
+    params: {
+      companionId: { type: "number", required: true },
+      x: { type: "number", desc: "Area center X", required: true },
+      y: { type: "number", desc: "Area center Y", required: true },
+      radius: { type: "number", desc: "Maintenance radius", default: 24 },
+      ammo: { type: "string", desc: "Optional turret ammo item to refill, e.g. firearm-magazine", default: "" }
+    }
+  },
   action_wololo: {
     desc: "Play wololo sound",
     rcon: "/fac_action_wololo {companionId}",
