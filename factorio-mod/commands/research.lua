@@ -56,3 +56,25 @@ commands.add_command("fac_research_set", nil, function(cmd)
     else u.json_response({id = id, error = "Failed"}) end
   end)
 end)
+
+-- Tech path (Pillar I planning): unresearched prerequisite chain for a target tech,
+-- in topological order (prereqs first) — what to research, and in what order.
+commands.add_command("fac_tech_path", nil, function(cmd)
+  u.safe_command(function()
+    local args = u.parse_args("^(%S+)%s+(%S+)$", cmd.parameter)
+    local id, c = u.find_companion(args[1])
+    if not id then u.error_response("Companion not found"); return end
+    local force = c.entity.force
+    local tech = force.technologies[args[2]]
+    if not tech then u.error_response("Unknown technology: " .. tostring(args[2])); return end
+    local visited, order = {}, {}
+    local function visit(t)
+      if visited[t.name] then return end
+      visited[t.name] = true
+      for _, p in pairs(t.prerequisites) do visit(p) end
+      if not t.researched then order[#order + 1] = t.name end
+    end
+    visit(tech)
+    u.json_response({id = id, tech = args[2], already_researched = tech.researched, path = order, steps = #order})
+  end)
+end)

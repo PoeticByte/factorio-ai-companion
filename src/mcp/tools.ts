@@ -535,11 +535,36 @@ export const TOOLS: Record<string, {
     }
   },
   factory_analyze: {
-    desc: "Factory doctor: scan crafting machines + drills in radius, compute each item's production vs consumption rate (items/sec from live crafting_speed), and flag bottlenecks (consumed faster than produced). Answers \"what's my factory bottlenecked on?\".",
+    desc: "Factory doctor DIAGNOSE: scan crafting machines + drills in radius, compute each item's production vs consumption rate (items/sec from live crafting_speed), and flag bottlenecks (consumed faster than produced). Answers \"what's my factory bottlenecked on?\".",
     rcon: "/fac_factory_analyze {companionId} {radius}",
     params: {
       companionId: { type: "number", required: true },
       radius: { type: "number", desc: "Scan radius", default: 50 }
+    }
+  },
+  factory_graph: {
+    desc: "Production graph: recipe-level DAG of an area — for each item, which recipes produce it and which consume it (and how many machines).",
+    rcon: "/fac_factory_graph {companionId} {radius}",
+    params: {
+      companionId: { type: "number", required: true },
+      radius: { type: "number", default: 50 }
+    }
+  },
+  factory_fix: {
+    desc: "Factory doctor TREAT: find the worst fixable bottleneck and, if the companion carries the right machine, place it + set its recipe nearby (else report a suggestion). MVP: places the machine only — inputs/power still need wiring.",
+    rcon: "/fac_factory_fix {companionId} {radius}",
+    params: {
+      companionId: { type: "number", required: true },
+      radius: { type: "number", default: 50 }
+    }
+  },
+  production_plan: {
+    desc: "Production planner (Pillar I): given a target item + rate/sec, recurse the recipe DAG to compute rate + baseline machine count for every intermediate and the raw inputs needed. The ratio math behind \"build me X/s of Y\".",
+    rcon: "/fac_production_plan {companionId} {item} {rate}",
+    params: {
+      companionId: { type: "number", required: true },
+      item: { type: "string", desc: "Target item, e.g. electronic-circuit", required: true },
+      rate: { type: "number", desc: "Target items/sec", default: 1 }
     }
   },
   plan_create: {
@@ -580,6 +605,14 @@ export const TOOLS: Record<string, {
     desc: "Get research progress",
     rcon: "/fac_research_progress {companionId}",
     params: { companionId: { type: "number", required: true } }
+  },
+  tech_path: {
+    desc: "Tech planning: unresearched prerequisite chain for a target technology, in topological order (what to research, in what order).",
+    rcon: "/fac_tech_path {companionId} {technology}",
+    params: {
+      companionId: { type: "number", required: true },
+      technology: { type: "string", required: true }
+    }
   },
 
   // Context
