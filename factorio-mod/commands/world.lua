@@ -205,9 +205,87 @@ commands.add_command("fac_factory_graph", nil, function(cmd)
   end)
 end)
 
+-- Poles the companion may use to extend power, weakest first (cheapest grid join).
+local POLE_PRIORITY = {"small-electric-pole", "medium-electric-pole", "big-electric-pole", "substation"}
+-- Fuels for a burner machine, best first.
+local BURNER_FUELS = {"coal", "solid-fuel", "wood", "carbon", "nuclear-fuel"}
+
+local function find_in_inv(inv, names)
+  for _, n in ipairs(names) do if inv.get_item_count(n) > 0 then return n end end
+  return nil
+end
+
+-- Energize a freshly placed electric machine: if it isn't on a powered network,
+-- drop a pole next to it (so its supply area covers the machine) and a connected
+-- line of poles toward the nearest existing pole. Fair-play: poles from inventory;
+-- Factorio auto-connects poles within wire reach.
+local function wire_power(c, machine)
+  local e = c.entity
+  local surf, force = e.surface, e.force
+  if not machine.prototype.electric_energy_source_prototype then return {power = "not electric"} end
+  if machine.is_connected_to_electric_network() then return {power = "already connected"} end
+  local inv = e.get_main_inventory()
+  local pole_item = find_in_inv(inv, POLE_PRIORITY)
+  if not pole_item then return {power = "no pole in inventory"} end
+  local reach = prototypes.entity[pole_item].get_max_wire_distance() or 7.5
+
+  -- Nearest existing pole to graft the new chain onto.
+  local target, td = nil, math.huge
+  for _, p in ipairs(surf.find_entities_filtered{position = machine.position, radius = 64, type = "electric-pole", force = force}) do
+    if p.valid and p ~= machine then
+      local d = u.distance(machine.position, p.position)
+      if d < td then td, target = d, p end
+    end
+  end
+  if not target then return {power = "no grid within 64 tiles"} end
+
+  local placed = 0
+  local function drop(near)
+    if inv.get_item_count(pole_item) < 1 then return nil end
+    local spot = surf.find_non_colliding_position(pole_item, near, 5, 0.5)
+    if not spot then return nil end
+    local pole = surf.create_entity{name = pole_item, position = spot, force = force}
+    if not pole then return nil end
+    inv.remove{name = pole_item, count = 1}; placed = placed + 1
+    return pole
+  end
+
+  -- 1) Pole hugging the machine so the machine sits in its supply area.
+  local last = drop(machine.position)
+  if not last then return {power = "could not place pole"} end
+  -- 2) Step toward the target until the chain is within wire reach of it.
+  local step = math.max(2, reach - 1)
+  local guard = 0
+  while u.distance(last.position, target.position) > reach and guard < 24 do
+    guard = guard + 1
+    local dx, dy = target.position.x - last.position.x, target.position.y - last.position.y
+    local len = math.sqrt(dx * dx + dy * dy); if len < 0.01 then break end
+    local nxt = drop({x = last.position.x + dx / len * step, y = last.position.y + dy / len * step})
+    if not nxt then break end
+    last = nxt
+  end
+
+  return {power = machine.is_connected_to_electric_network() and "connected" or "poles placed (grid may be unpowered)",
+          poles_placed = placed, pole = pole_item}
+end
+
+-- Fuel a burner machine from the companion's inventory (electric machines skip this).
+local function fuel_burner(c, machine)
+  if machine.prototype.electric_energy_source_prototype then return {fuel = "electric"} end
+  local fi = machine.get_fuel_inventory()
+  if not fi then return {fuel = "no fuel slot"} end
+  local inv = c.entity.get_main_inventory()
+  local f = find_in_inv(inv, BURNER_FUELS)
+  if not f then return {fuel = "none in inventory"} end
+  local ins = fi.insert{name = f, count = math.min(5, inv.get_item_count(f))}
+  if ins > 0 then inv.remove{name = f, count = ins}; return {fuel = f, inserted = ins} end
+  return {fuel = "could not insert"}
+end
+
 -- Treat: find the worst fixable bottleneck and, if the companion carries the right
--- machine, place it + set its recipe near the companion. Otherwise report a suggestion.
--- MVP: places the machine only — inputs/power still need wiring.
+-- machine, place it + set its recipe + ENERGIZE it (wire power / fuel a burner) near
+-- the companion. Reports the recipe's inputs so a plan/haul can feed it.
+-- Still manual: belt/inserter routing of those inputs.
 commands.add_command("fac_factory_fix", nil, function(cmd)
   u.safe_command(function()
     local args = u.parse_args("^(%S+)%s*(%d*)$", cmd.parameter)
@@ -237,9 +315,16 @@ commands.add_command("fac_factory_fix", nil, function(cmd)
     if not placed then u.json_response({id = id, fixed = false, reason = "place failed"}); return end
     inv.remove{name = machine, count = 1}
     if machine ~= "stone-furnace" then pcall(function() placed.set_recipe(target.recipe.name) end) end
+
+    local power = wire_power(c, placed)
+    local fuel = fuel_burner(c, placed)
+    local inputs = {}
+    for _, ing in ipairs(target.recipe.ingredients) do inputs[#inputs + 1] = ing.name end
+
     u.json_response({id = id, fixed = true, bottleneck = target.item, built = machine,
       at = {x = math.floor(spot.x), y = math.floor(spot.y)}, recipe = target.recipe.name,
-      note = "placed + recipe set; inputs/power still need wiring"})
+      power = power, fuel = fuel, needs_inputs = inputs,
+      note = "placed + recipe + energized; still manual: belt/inserter routing of inputs"})
   end)
 end)
 

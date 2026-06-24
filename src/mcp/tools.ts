@@ -551,7 +551,7 @@ export const TOOLS: Record<string, {
     }
   },
   factory_fix: {
-    desc: "Factory doctor TREAT: find the worst fixable bottleneck and, if the companion carries the right machine, place it + set its recipe nearby (else report a suggestion). MVP: places the machine only — inputs/power still need wiring.",
+    desc: "Factory doctor TREAT: find the worst fixable bottleneck and, if the companion carries the right machine, place it + set its recipe + ENERGIZE it (drop a connected pole line to the nearest grid for electric machines, or fuel a burner) near the companion. Reports the recipe's needs_inputs so a plan/haul can feed it. Still manual: belt/inserter routing of inputs.",
     rcon: "/fac_factory_fix {companionId} {radius}",
     params: {
       companionId: { type: "number", required: true },
