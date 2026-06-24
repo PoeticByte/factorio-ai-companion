@@ -3,3 +3,6 @@ pre-commit:
     validate-tools:
       run: bun run scripts/validate-tools.ts
       fail_text: "MCP tools don't match Lua commands 1:1. Run 'bun run scripts/validate-tools.ts' to see details."
+    lint-lua-api:
+      run: bun run scripts/lint-lua-api.ts
+      fail_text: "Invalid defines.* path in Lua (silent nil at runtime). Run 'bun run scripts/lint-lua-api.ts' for details."
