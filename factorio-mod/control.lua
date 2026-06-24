@@ -4,6 +4,7 @@ local queues = require("commands.queues")
 local nav = require("commands.navigation")
 local orch = require("commands.orchestration")
 local roles = require("commands.roles")
+local memory = require("commands.memory")
 
 -- Get version dynamically from mod info
 local MOD_VERSION = script.active_mods["ai-companion"] or "unknown"
@@ -20,6 +21,7 @@ local function init_storage()
   nav.init()
   orch.init()
   roles.init()
+  memory.init()
 end
 
 local function cleanup_messages()

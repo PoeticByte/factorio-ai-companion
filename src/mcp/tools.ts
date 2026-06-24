@@ -600,6 +600,45 @@ export const TOOLS: Record<string, {
     }
   },
 
+  // Memory (Pillar III: a buddy who knows you) — persistent, save-surviving knowledge.
+  memory_remember: {
+    desc: "Remember something durable about the player/world (survives saves). JSON: " +
+      "{type:'location', name:'iron mine', kind?:'ore|base|defense|custom', x?, y?, companionId?, note?} (give x/y, or a companionId to capture that companion's current position = 'remember here as X'); " +
+      "{type:'pref', key:'belts', value:'red'} (playstyle/layout preference); " +
+      "{type:'note', text:'...', x?, y?}.",
+    rcon: "/fac_memory_remember {memory}",
+    params: { memory: { type: "string", desc: "JSON memory entry — see desc", required: true } }
+  },
+  memory_recall: {
+    desc: "Recall remembered knowledge. type = location|pref|note|all; optional substring filters name/kind/key/value/text. Call at session start to know the player's places & preferences.",
+    rcon: "/fac_memory_recall {type} {query}",
+    params: {
+      type: { type: "string", desc: "location|pref|note|all", default: "all" },
+      query: { type: "string", desc: "Optional substring filter", default: "" }
+    }
+  },
+  memory_forget: {
+    desc: "Forget a remembered entry. type = location|pref|note; key = the name/key, or the 1-based index for a note.",
+    rcon: "/fac_memory_forget {type} {key}",
+    params: {
+      type: { type: "string", desc: "location|pref|note", required: true },
+      key: { type: "string", desc: "name/key, or note index", required: true }
+    }
+  },
+  memory_list: {
+    desc: "Dump all remembered locations, preferences, and notes (with counts).",
+    rcon: "/fac_memory_list",
+    params: {}
+  },
+  memory_goto: {
+    desc: "Walk a companion to a remembered named location (e.g. 'iron mine').",
+    rcon: "/fac_memory_goto {companionId} {name}",
+    params: {
+      companionId: { type: "number", required: true },
+      name: { type: "string", desc: "Remembered location name", required: true }
+    }
+  },
+
   // Research
   research_get: {
     desc: "Get current research status",
