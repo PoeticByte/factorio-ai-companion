@@ -131,13 +131,14 @@ local function deps()
   return _queues, _nav
 end
 
--- Normalize one incoming step: a string -> manual step; a table -> may carry action.
+-- Normalize one incoming step: a string -> manual step; a table -> may carry an
+-- action and explicit `deps` (1-based indices of steps it waits on).
 local function norm_step(raw)
   if type(raw) == "string" then return {desc = raw, status = "pending"} end
   if type(raw) == "table" then
     local act = raw.action
     local desc = raw.desc or (act and act.type) or "step"
-    return {desc = desc, status = "pending", action = act}
+    return {desc = desc, status = "pending", action = act, deps = raw.deps}
   end
   return {desc = "step", status = "pending"}
 end
@@ -148,30 +149,49 @@ function M.plan_create(goal, steps, auto)
   storage.plan_next_id = pid + 1
   local s = {}
   for i, raw in ipairs(steps or {}) do s[i] = norm_step(raw) end
-  if s[1] then s[1].status = "active" end
-  storage.plans[pid] = {id = pid, goal = goal, steps = s, current = 1,
-                        created = game.tick, auto = auto and true or false}
+  -- Resolve dependencies: explicit `deps` (filtered to valid in-range indices),
+  -- else an implicit dependency on the previous step (sequential by default, so a
+  -- plain ordered list still runs in order). deps = [] makes a step start at once.
+  for i, st in ipairs(s) do
+    local deps = {}
+    if st.deps ~= nil then
+      for _, di in ipairs(st.deps) do
+        di = math.floor(tonumber(di) or 0)
+        if di >= 1 and di <= #s and di ~= i then deps[#deps + 1] = di end
+      end
+    elseif i > 1 then
+      deps = {i - 1}
+    end
+    st.deps = deps
+  end
+  storage.plans[pid] = {id = pid, goal = goal, steps = s, created = game.tick,
+                        auto = auto and true or false}
   return storage.plans[pid]
 end
 
--- Finish the current step (status "done" | "failed"), clear its runtime fields,
--- and activate the next one (or mark the whole plan done).
-local function advance(p, status, note)
-  local st = p.steps[p.current]
-  if st then
-    st.status = status or "done"
-    st.note = note
-    st.cid = nil; st.phase = nil; st.queue = nil; st.target = nil
-  end
-  p.current = p.current + 1
-  local nx = p.steps[p.current]
-  if nx then nx.status = "active" else p.done = true; p.auto = false end
+-- Finish a step (status "done"|"failed"|"pending"), clearing its runtime fields.
+local function finish_step(st, status, note)
+  st.status = status or "done"
+  st.note = note
+  st.cid = nil; st.phase = nil; st.queue = nil; st.target = nil
 end
 
+-- Mark a plan done once every step is done/failed.
+local function refresh_done(p)
+  for _, st in ipairs(p.steps) do
+    if st.status ~= "done" and st.status ~= "failed" then return end
+  end
+  p.done = true; p.auto = false
+end
+
+-- Manual advance (text steps): finish the earliest unfinished step.
 function M.plan_step_done(pid)
   local p = storage.plans and storage.plans[pid]
   if not p then return nil end
-  advance(p, "done")
+  for _, st in ipairs(p.steps) do
+    if st.status ~= "done" and st.status ~= "failed" then finish_step(st, "done"); break end
+  end
+  refresh_done(p)
   return p
 end
 
@@ -194,8 +214,9 @@ end
 -- Already driving some plan's running step?
 local function assigned_to_plan(cid)
   for _, p in pairs(storage.plans or {}) do
-    local st = p.steps and p.steps[p.current]
-    if st and st.cid == cid and st.status == "running" then return true end
+    for _, st in ipairs(p.steps or {}) do
+      if st.status == "running" and st.cid == cid then return true end
+    end
   end
   return false
 end
@@ -237,8 +258,34 @@ local function stamp_line(c, entity, x, y, dir, count)
   return ghosts
 end
 
+-- Where a step's work happens (for nearest-worker allocation).
+local function step_target_pos(st)
+  local a = st.action
+  if not a then return nil end
+  if a.target then return a.target end
+  if a.x and a.y then return {x = a.x, y = a.y} end
+  if a.source then return a.source end
+  return nil
+end
+
+-- Negotiated allocation: the nearest free companion to the job (least walking →
+-- emergent division of labor across the crew). Falls back to any free one.
+local function pick_worker(st)
+  local tp = step_target_pos(st)
+  if not tp then return pick_free_companion() end
+  local best, bd = nil, math.huge
+  for cid in pairs(storage.companions or {}) do
+    if is_free(cid) then
+      local c = u.get_companion(cid)
+      local d = u.distance(c.entity.position, tp)
+      if d < bd then bd, best = d, cid end
+    end
+  end
+  return best
+end
+
 -- Research is force-level (no companion); set it, then watch until researched.
-local function tick_research(p, st)
+local function tick_research(st)
   local act = st.action
   local force = game.forces.player
   for _, c in pairs(storage.companions or {}) do
@@ -246,20 +293,20 @@ local function tick_research(p, st)
   end
   if not force then return end
   local tech = force.technologies[act.tech]
-  if not tech then advance(p, "failed", "unknown tech " .. tostring(act.tech)); return end
-  if tech.researched then advance(p, "done", "researched"); return end
+  if not tech then finish_step(st, "failed", "unknown tech " .. tostring(act.tech)); return end
+  if tech.researched then finish_step(st, "done", "researched"); return end
   if st.status ~= "running" then
     for _, pr in pairs(tech.prerequisites) do
-      if not pr.researched then advance(p, "failed", "missing prereq " .. pr.name); return end
+      if not pr.researched then finish_step(st, "failed", "missing prereq " .. pr.name); return end
     end
     if force.add_research(act.tech) then st.status = "running"
-    else advance(p, "failed", "add_research failed") end
+    else finish_step(st, "failed", "add_research failed") end
   end
 end
 
--- Begin a companion-driven action for the active step. Marks the step running
+-- Begin a companion-driven action for a runnable step. Marks the step running
 -- (so it won't be re-claimed) or fails it with a reason the LLM/user can read.
-local function start_companion_action(p, st, cid)
+local function start_companion_action(st, cid)
   local queues, nav = deps()
   local c = u.get_companion(cid)
   local act = st.action
@@ -268,84 +315,109 @@ local function start_companion_action(p, st, cid)
 
   if t == "craft" then
     local r = queues.start_craft(cid, act.recipe, act.qty or 1)
-    if r.error then advance(p, "failed", r.error)
+    if r.error then finish_step(st, "failed", r.error)
     else st.status = "running"; st.queue = "craft_queues" end
 
   elseif t == "haul" then
-    if not (act.item and act.source and act.dest) then advance(p, "failed", "haul needs item/source/dest"); return end
+    if not (act.item and act.source and act.dest) then finish_step(st, "failed", "haul needs item/source/dest"); return end
     local r = queues.start_haul(cid, act.item, act.source, act.dest, act.quota or 0)
-    if r.error then advance(p, "failed", r.error)
+    if r.error then finish_step(st, "failed", r.error)
     else st.status = "running"; st.queue = "haul_queues" end
 
   elseif t == "build_line" then
     local ghosts, err = stamp_line(c, act.entity, act.x, act.y, act.dir, act.count)
-    if not ghosts or #ghosts == 0 then advance(p, "failed", err or "no ghosts placed"); return end
+    if not ghosts or #ghosts == 0 then finish_step(st, "failed", err or "no ghosts placed"); return end
     local r = queues.start_ghost_build(cid, ghosts)
-    if r.error then advance(p, "failed", r.error)
+    if r.error then finish_step(st, "failed", r.error)
     else st.status = "running"; st.queue = "ghost_build_queues" end
 
   elseif t == "mine" then
-    if not act.target then advance(p, "failed", "mine needs target {x,y}"); return end
+    if not act.target then finish_step(st, "failed", "mine needs target {x,y}"); return end
     -- Walk to the patch first; the harvest queue itself doesn't path.
     st.status = "running"; st.queue = "harvest_queues"; st.phase = "travel"
     st.target = {x = act.target.x, y = act.target.y}
     nav.go_to(cid, st.target, {radius = 3})
 
   else
-    advance(p, "failed", "unknown action type " .. tostring(t))
+    finish_step(st, "failed", "unknown action type " .. tostring(t))
   end
 end
 
 -- Advance a running companion step: handle mine's travel pre-phase, else treat
 -- "underlying queue gone" as the step being finished.
-local function tick_running_step(p, st)
-  local queues, nav = deps()
+local function tick_running_step(st)
+  local queues = deps()
   local cid = st.cid
   local c = u.get_companion(cid)
-  if not c then advance(p, "failed", "companion lost"); return end
+  if not c then finish_step(st, "failed", "companion lost"); return end
 
   if st.action.type == "mine" and st.phase == "travel" then
     if not (storage.walking_queues and storage.walking_queues[cid]) then
       if u.distance(c.entity.position, st.target) <= 5 then
         local r = queues.start_harvest(cid, st.target, st.action.qty or 50, st.action.resource)
-        if r.error then advance(p, "failed", r.error); return end
+        if r.error then finish_step(st, "failed", r.error); return end
         st.phase = "work"
       else
-        advance(p, "failed", "patch unreachable")
+        finish_step(st, "failed", "patch unreachable")
       end
     end
     return
   end
 
   local qt = storage[st.queue]
-  if not qt or not qt[cid] then advance(p, "done") end
+  if not qt or not qt[cid] then finish_step(st, "done") end
 end
 
--- Throttled from control.lua. Drives every auto plan's active step forward.
+-- A step is runnable once all its dependency steps are done. Returns
+-- true (ready) | false (still waiting) | "depfail" (a dependency failed).
+local function deps_done(p, st)
+  for _, di in ipairs(st.deps or {}) do
+    local d = p.steps[di]
+    if d then
+      if d.status == "failed" then return "depfail" end
+      if d.status ~= "done" then return false end
+    end
+  end
+  return true
+end
+
+-- Throttled from control.lua. Drives every auto plan as a dependency DAG: all
+-- dependency-satisfied steps run in PARALLEL, each claimed by the nearest free
+-- companion. This is what turns a plan into a crew effort (supply chains, division
+-- of labor). ("active" is treated as "pending" for save-migration from v0.21.0.)
 function M.tick_plans()
   for _, p in pairs(storage.plans or {}) do
     if p.auto and not p.done then
-      local st = p.steps[p.current]
-      if st and st.action then
-        if st.action.type == "research" then
-          tick_research(p, st)
-        elseif st.status == "active" then
-          local cid = st.action.cid
-          if cid then
-            if is_free(cid) then start_companion_action(p, st, cid) end   -- pinned: wait if busy
-          else
-            cid = pick_free_companion()
-            if cid then start_companion_action(p, st, cid) end            -- else wait for a free one
+      for _, st in ipairs(p.steps) do
+        local s = st.status
+        if s == "running" then
+          if st.action and st.action.type == "research" then tick_research(st)
+          else tick_running_step(st) end
+        elseif (s == "pending" or s == "active") and st.action then
+          local rd = deps_done(p, st)
+          if rd == "depfail" then
+            finish_step(st, "failed", "dependency failed")
+          elseif rd == true then
+            if st.action.type == "research" then
+              tick_research(st)                       -- no companion needed
+            else
+              local cid = st.action.cid
+              if cid then
+                if is_free(cid) then start_companion_action(st, cid) end   -- pinned: wait if busy
+              else
+                cid = pick_worker(st)
+                if cid then start_companion_action(st, cid) end            -- else wait for a worker
+              end
+            end
           end
-        elseif st.status == "running" then
-          tick_running_step(p, st)
         end
       end
+      refresh_done(p)
     end
   end
 end
 
--- Turn auto-execution on/off. Off also halts the in-flight step + frees its companion.
+-- Turn auto-execution on/off. Off also halts every in-flight step + frees workers.
 function M.plan_run(pid, on)
   local p = storage.plans and storage.plans[pid]
   if not p then return nil end
@@ -353,17 +425,18 @@ function M.plan_run(pid, on)
     if not p.done then p.auto = true end
   else
     p.auto = false
-    local st = p.steps[p.current]
-    if st and st.cid and st.status == "running" then
-      local queues = deps()
-      local cid = st.cid
-      if storage.harvest_queues and storage.harvest_queues[cid] then queues.stop_harvest(cid) end
-      if storage.craft_queues and storage.craft_queues[cid] then queues.stop_craft(cid) end
-      if storage.haul_queues and storage.haul_queues[cid] then queues.stop_haul(cid) end
-      if storage.ghost_build_queues and storage.ghost_build_queues[cid] then queues.stop_ghost_build(cid) end
-      if storage.walking_queues then storage.walking_queues[cid] = nil end
-      M.release_all(cid)
-      st.status = "active"; st.cid = nil; st.phase = nil; st.queue = nil
+    local queues = deps()
+    for _, st in ipairs(p.steps) do
+      if st.status == "running" and st.cid then
+        local cid = st.cid
+        if storage.harvest_queues and storage.harvest_queues[cid] then queues.stop_harvest(cid) end
+        if storage.craft_queues and storage.craft_queues[cid] then queues.stop_craft(cid) end
+        if storage.haul_queues and storage.haul_queues[cid] then queues.stop_haul(cid) end
+        if storage.ghost_build_queues and storage.ghost_build_queues[cid] then queues.stop_ghost_build(cid) end
+        if storage.walking_queues then storage.walking_queues[cid] = nil end
+        M.release_all(cid)
+        finish_step(st, "pending")   -- re-runnable when auto is turned back on
+      end
     end
   end
   return p
@@ -385,7 +458,9 @@ commands.add_command("fac_plan_status", nil, function(cmd)
     if not pid or pid < 1 then
       local out = {}
       for id, p in pairs(storage.plans or {}) do
-        out[#out + 1] = {id = id, goal = p.goal, current = p.current, steps = #p.steps,
+        local done = 0
+        for _, st in ipairs(p.steps) do if st.status == "done" then done = done + 1 end end
+        out[#out + 1] = {id = id, goal = p.goal, steps = #p.steps, done_steps = done,
                          auto = p.auto or false, done = p.done or false}
       end
       u.json_response({plans = out, count = #out}); return

@@ -573,7 +573,8 @@ export const TOOLS: Record<string, {
       "{type:'craft', recipe:'iron-gear-wheel', qty:20}; " +
       "{type:'build_line', entity:'transport-belt', x, y, dir:0..3, count:10} (single machine = count 1, builds via ghosts the companion walks to); " +
       "{type:'haul', item:'iron-ore', source:{x,y}, dest:{x,y}, quota:200}; " +
-      "{type:'research', tech:'automation'} (force-level, no companion). Add action.cid to pin a step to a specific companion. Steps run sequentially; a free companion is auto-claimed per step.",
+      "{type:'research', tech:'automation'} (force-level, no companion). Add action.cid to pin a step to a specific companion. " +
+      "PARALLELISM: each step may declare deps:[stepIndices] (1-based) and runs as soon as those finish — independent steps run AT THE SAME TIME across the crew, each claimed by the nearest free companion (emergent division of labor). Omit deps for the default sequential chain (each step waits on the previous); deps:[] starts immediately. This expresses supply chains: e.g. step1 mine ore, step2 (deps:[1]) haul ore to smelter, step3 (deps:[2]) craft.",
     rcon: "/fac_plan_create {plan}",
     params: {
       plan: { type: "string", desc: "JSON {goal, auto?, steps[]} — see desc for action schema", required: true }
