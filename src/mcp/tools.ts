@@ -535,7 +535,7 @@ export const TOOLS: Record<string, {
     }
   },
   factory_analyze: {
-    desc: "Factory doctor DIAGNOSE: scan crafting machines + drills in radius, compute each item's production vs consumption rate (items/sec from live crafting_speed), and flag bottlenecks (consumed faster than produced). Answers \"what's my factory bottlenecked on?\".",
+    desc: "Factory doctor DIAGNOSE: scan crafting machines + drills in radius, compute each item's production vs consumption rate (items/sec from live crafting_speed), flag bottlenecks (consumed faster than produced), AND list dead machines by reason in `issues` (unpowered / idle no-recipe / no-fuel). Answers \"what's bottlenecked\" and \"why is this machine dead\".",
     rcon: "/fac_factory_analyze {companionId} {radius}",
     params: {
       companionId: { type: "number", required: true },

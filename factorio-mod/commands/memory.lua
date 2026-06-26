@@ -18,11 +18,44 @@ function M.init()
   storage.memory.locations = storage.memory.locations or {}   -- lower(name) -> entry
   storage.memory.prefs = storage.memory.prefs or {}           -- lower(key)  -> entry
   storage.memory.notes = storage.memory.notes or {}           -- array
+  storage.memory.tags = storage.memory.tags or {}             -- lower(name) -> LuaCustomChartTag
 end
 
 local function loc_entry(name, kind, x, y, note)
   return {name = name, kind = kind or "custom", x = math.floor(x), y = math.floor(y),
           note = note, tick = game.tick}
+end
+
+-- Surface + force to chart a location on (the companion's if given, else nauvis/player).
+local function tag_surface_force(companionId)
+  if companionId ~= nil then
+    local _, c = u.find_companion(companionId)
+    if c then return c.entity.surface, c.entity.force end
+  end
+  return (game.surfaces and game.surfaces.nauvis) or game.get_surface(1), game.forces.player
+end
+
+-- Drop (or replace) a map chart tag so the remembered place shows on the map.
+local function set_location_tag(key, entry, companionId)
+  storage.memory.tags = storage.memory.tags or {}
+  local old = storage.memory.tags[key]
+  if old and old.valid then old.destroy() end
+  storage.memory.tags[key] = nil
+  local surf, force = tag_surface_force(companionId)
+  if not (surf and force) then return end
+  local ok, tag = pcall(function()
+    return force.add_chart_tag(surf, {position = {x = entry.x, y = entry.y},
+                                      text = entry.name .. " [" .. entry.kind .. "]"})
+  end)
+  if ok and tag then storage.memory.tags[key] = tag end
+end
+
+local function clear_location_tag(key)
+  local t = storage.memory.tags and storage.memory.tags[key]
+  if t then
+    if t.valid then t.destroy() end
+    storage.memory.tags[key] = nil
+  end
 end
 
 -- ---- Remember: store/update one memory. JSON-driven for flexible shapes. ----
@@ -45,9 +78,11 @@ commands.add_command("fac_memory_remember", nil, function(cmd)
         if c then x, y = c.entity.position.x, c.entity.position.y end
       end
       if not x or not y then u.error_response("location needs x,y or a companionId to capture position"); return end
+      local key = d.name:lower()
       local entry = loc_entry(d.name, d.kind, x, y, d.note)
-      storage.memory.locations[d.name:lower()] = entry
-      u.json_response({remembered = "location", entry = entry})
+      storage.memory.locations[key] = entry
+      set_location_tag(key, entry, d.companionId)
+      u.json_response({remembered = "location", entry = entry, charted = storage.memory.tags[key] ~= nil})
 
     elseif d.type == "pref" then
       if type(d.key) ~= "string" then u.error_response("pref needs key"); return end
@@ -121,6 +156,7 @@ commands.add_command("fac_memory_forget", nil, function(cmd)
       local k = key:lower()
       local existed = storage.memory.locations[k] ~= nil
       storage.memory.locations[k] = nil
+      clear_location_tag(k)
       u.json_response({forgot = existed, type = typ, key = key})
     elseif typ == "pref" then
       local k = key:lower()

@@ -156,7 +156,24 @@ local function recipe_for(force, item)
   return nil
 end
 
--- Diagnose: net production rate per item + bottlenecks (consumed faster than produced).
+-- Per-machine health: which machines are dead and WHY (unpowered / idle / starved).
+local function scan_issues(surf, area, force)
+  local unpowered, idle, no_fuel = {}, {}, {}
+  local function rec(t, m) if #t < 12 then t[#t + 1] = {name = m.name, x = math.floor(m.position.x), y = math.floor(m.position.y)} end end
+  for _, m in ipairs(surf.find_entities_filtered{area = area, force = force,
+      type = {"assembling-machine", "furnace", "mining-drill", "lab"}}) do
+    if m.valid then
+      if m.prototype.electric_energy_source_prototype and not m.is_connected_to_electric_network() then rec(unpowered, m) end
+      if m.type == "assembling-machine" and not m.get_recipe() then rec(idle, m) end
+      local fi = m.get_fuel_inventory()
+      if fi and fi.is_empty() then rec(no_fuel, m) end
+    end
+  end
+  return {unpowered = unpowered, idle = idle, no_fuel = no_fuel}
+end
+
+-- Diagnose: net production rate per item + bottlenecks (consumed faster than produced)
+-- + per-machine issues (unpowered / idle / no-fuel) — the "why is this dead" view.
 commands.add_command("fac_factory_analyze", nil, function(cmd)
   u.safe_command(function()
     local args = u.parse_args("^(%S+)%s*(%d*)$", cmd.parameter)
@@ -175,7 +192,9 @@ commands.add_command("fac_factory_analyze", nil, function(cmd)
       end
     end
     table.sort(bottlenecks, function(a, b) return a.deficit > b.deficit end)
-    u.json_response({id = id, radius = radius, machines = machines, net = net, bottlenecks = bottlenecks})
+    local issues = scan_issues(c.entity.surface, area_around(c, radius), c.entity.force)
+    u.json_response({id = id, radius = radius, machines = machines, net = net,
+                     bottlenecks = bottlenecks, issues = issues})
   end)
 end)
 
