@@ -495,4 +495,37 @@ commands.add_command("fac_plan_run", nil, function(cmd)
   end)
 end)
 
+-- One-shot situational awareness for the orchestrator: companions, running plans,
+-- standing roles, live reservations, and what the companion remembers. Pure reads.
+commands.add_command("fac_overview", nil, function(cmd)
+  u.safe_command(function()
+    local comp_ids = {}
+    for cid, c in pairs(storage.companions or {}) do
+      if c.entity and c.entity.valid then comp_ids[#comp_ids + 1] = cid end
+    end
+    local plans = {}
+    for id, p in pairs(storage.plans or {}) do
+      local done = 0
+      for _, st in ipairs(p.steps or {}) do if st.status == "done" then done = done + 1 end end
+      plans[#plans + 1] = {id = id, goal = p.goal, steps = #(p.steps or {}), done_steps = done,
+                           auto = p.auto or false, done = p.done or false}
+    end
+    local roles = {}
+    for cid, r in pairs(storage.roles or {}) do roles[#roles + 1] = {cid = cid, role = r.role} end
+    local nres = 0
+    for _ in pairs(storage.reservations or {}) do nres = nres + 1 end
+    local mem = storage.memory or {}
+    local nloc, npref = 0, 0
+    for _ in pairs(mem.locations or {}) do nloc = nloc + 1 end
+    for _ in pairs(mem.prefs or {}) do npref = npref + 1 end
+    u.json_response({
+      companions = {count = #comp_ids, ids = comp_ids},
+      plans = plans,
+      roles = roles,
+      reservations = nres,
+      memory = {locations = nloc, prefs = npref, notes = #(mem.notes or {})},
+    })
+  end)
+end)
+
 return M

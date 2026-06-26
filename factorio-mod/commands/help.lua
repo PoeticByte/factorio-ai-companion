@@ -31,7 +31,7 @@ commands.add_command("fac_help", nil, function()
     plan = {"create (auto + DAG deps)", "status", "step_done", "run on|off"},
     memory = {"remember", "recall", "forget", "list", "goto"},
     context = {"clear", "check"},
-    meta = {"version", "help", "session_status"},
+    meta = {"version", "help", "overview", "session_status"},
     player = {"/fac <msg>", "/fac <id> <msg>", "/fac spawn", "/fac list", "/fac kill", "/fac clear", "/fac name"}
   })
 end)

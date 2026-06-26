@@ -681,6 +681,11 @@ export const TOOLS: Record<string, {
   },
 
   // Meta
+  overview: {
+    desc: "One-shot situational awareness: companions (count/ids), running plans (goal/progress/auto), standing roles, live reservation count, and memory counts (locations/prefs/notes). Call at session start to see everything going on.",
+    rcon: "/fac_overview",
+    params: {}
+  },
   version: {
     desc: "Get mod version",
     rcon: "/fac_version",
