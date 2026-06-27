@@ -122,14 +122,13 @@ end)
 -- the active step, reserves/starts the matching queue, watches it, and advances —
 -- the colony self-drives. Progress is observable and survives saves.
 
--- Lazy deps: queues.lua already requires THIS module, so requiring it at load time
--- would be a cycle. Pull them in at first use (both fully loaded by runtime).
+-- queues.lua requires THIS module, so we can't require it back at load time
+-- (a cycle) — and Factorio FORBIDS require() at runtime ("Require can't be used
+-- outside of control.lua parsing"). So control.lua (which requires both) injects
+-- them once via set_deps; the executor reads the stored refs.
 local _queues, _nav
-local function deps()
-  _queues = _queues or require("commands.queues")
-  _nav = _nav or require("commands.navigation")
-  return _queues, _nav
-end
+function M.set_deps(q, n) _queues, _nav = q, n end
+local function deps() return _queues, _nav end
 
 -- Normalize one incoming step: a string -> manual step; a table -> may carry an
 -- action and explicit `deps` (1-based indices of steps it waits on).

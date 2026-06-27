@@ -6,6 +6,10 @@ local orch = require("commands.orchestration")
 local roles = require("commands.roles")
 local memory = require("commands.memory")
 
+-- Inject runtime deps into orchestration (Factorio forbids require() at runtime,
+-- and queues.lua already requires orchestration, so it can't require back).
+orch.set_deps(queues, nav)
+
 -- Get version dynamically from mod info
 local MOD_VERSION = script.active_mods["ai-companion"] or "unknown"
 

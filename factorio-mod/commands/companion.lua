@@ -32,9 +32,23 @@ commands.add_command("fac_companion_spawn", nil, function(cmd)
     local id = req_id or storage.companion_next_id
     if not req_id then storage.companion_next_id = storage.companion_next_id + 1
     elseif req_id >= storage.companion_next_id then storage.companion_next_id = req_id + 1 end
+    -- Spawn near the host player if one is connected; otherwise (headless /
+    -- autonomous dedicated server with NO players) fall back to the player force's
+    -- map spawn on nauvis. Companions are plain characters — they don't need a
+    -- player to exist, so the whole crew runs fully over RCON with no human present.
     local p = game.players[1]
-    if not p or not p.valid then u.error_response("No player"); return end
-    local e = p.surface.create_entity{name = "character", position = {x = p.position.x + id * 2, y = p.position.y}, force = p.force}
+    local surface, force, base
+    if p and p.valid then
+      surface, force, base = p.surface, p.force, p.position
+    else
+      force = game.forces.player
+      surface = game.surfaces.nauvis or game.get_surface(1)
+      if not surface then u.error_response("No surface"); return end
+      base = force.get_spawn_position(surface)
+    end
+    local want = {x = base.x + id * 2, y = base.y}
+    local pos = surface.find_non_colliding_position("character", want, 30, 0.5) or want
+    local e = surface.create_entity{name = "character", position = pos, force = force}
     if e then
       local color = u.get_companion_color(id)
       e.color = color
