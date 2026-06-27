@@ -27,14 +27,20 @@ Your response:
 
 Categories:
 - `chat_*` - say, get
-- `companion_*` - spawn, list, status, stop, position, inventory, health, disappear
+- `companion_*` - spawn, list, status, stop, stop_all, position, inventory, health, disappear
 - `move_*` - to, follow, stop
 - `resource_*` - nearest, list, mine, mine_until (skill)
 - `item_*` - pick, craft, recipes
 - `building_*` - place, remove, info, rotate, fuel, fill, empty
-- `action_*` - attack, flee, patrol, wololo
-- `research_*` - get, set, progress
-- `world_*` - scan, scan_enemies, nearest
+- `blueprint_*` - place, line, status, stop (mass construction)
+- `haul`/`refuel` - logistics queues
+- `action_*` / combat - attack, defend, flee, patrol, wololo, nest_clear, repair, combat_until (skill)
+- `research_*` - get, set, progress; `tech_path` (prereq chain)
+- `world_*` - scan, nearest, survey
+- **factory doctor (Pillar I)** - `factory_analyze` (bottlenecks + dead-machine issues), `factory_graph`, `factory_fix` (place+power+fuel), `production_plan`, `recipe_deps`
+- **orchestration** - `reserve`/`release`/`reservations`, `assign_role`/`clear_role`/`roles`
+- **plans (self-driving, Pillar II)** - `plan_create` (auto + DAG `deps` → parallel crew), `plan_status`, `plan_step_done`, `plan_run` on|off
+- **memory (Pillar III)** - `memory_remember`/`recall`/`forget`/`list`/`goto` (named locations show as map tags)
 - `context_*` - clear, check
 
 **Spawn companions:**
