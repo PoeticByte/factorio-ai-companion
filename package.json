@@ -3,6 +3,13 @@
   "module": "index.ts",
   "type": "module",
   "private": true,
+  "scripts": {
+    "validate": "bun run scripts/validate-tools.ts",
+    "lint:lua": "bun run scripts/lint-lua-api.ts",
+    "check": "bun run scripts/validate-tools.ts && bun run scripts/lint-lua-api.ts",
+    "smoke": "bun run scripts/smoke-pillars.ts",
+    "gen-api": "bun run scripts/gen-api-slim.ts"
+  },
   "devDependencies": {
     "@types/bun": "latest",
     "@types/node": "^25.0.9",
