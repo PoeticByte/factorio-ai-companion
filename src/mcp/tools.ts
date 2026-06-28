@@ -571,6 +571,14 @@ export const TOOLS: Record<string, {
       radius: { type: "number", default: 50 }
     }
   },
+  factory_wire: {
+    desc: "Factory doctor WIRE (Pillar I): turn the nearest assembling-machine (with a recipe) into a self-feeding station — input inserters pulling from buffer chests into the machine + an output inserter into an output chest, all from the companion's inventory. Then a haul plan keeps the input chests stocked (supply-chain handoff). Pair with factory_fix (which places+powers the machine).",
+    rcon: "/fac_factory_wire {companionId} {radius}",
+    params: {
+      companionId: { type: "number", required: true },
+      radius: { type: "number", desc: "Search radius for the machine", default: 16 }
+    }
+  },
   production_plan: {
     desc: "Production planner (Pillar I): given a target item + rate/sec, recurse the recipe DAG to compute rate + baseline machine count for every intermediate and the raw inputs needed. The ratio math behind \"build me X/s of Y\".",
     rcon: "/fac_production_plan {companionId} {item} {rate}",

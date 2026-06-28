@@ -343,7 +343,7 @@ commands.add_command("fac_factory_fix", nil, function(cmd)
     u.json_response({id = id, fixed = true, bottleneck = target.item, built = machine,
       at = {x = math.floor(spot.x), y = math.floor(spot.y)}, recipe = target.recipe.name,
       power = power, fuel = fuel, needs_inputs = inputs,
-      note = "placed + recipe + energized; still manual: belt/inserter routing of inputs"})
+      note = "placed + recipe + energized; call factory_wire to add I/O inserters+chests, then haul to feed it"})
   end)
 end)
 
@@ -382,5 +382,88 @@ commands.add_command("fac_production_plan", nil, function(cmd)
     local raws = {}
     for k, v in pairs(raw) do raws[k] = r2(v) end
     u.json_response({id = id, item = item, rate = rate, steps = steps, raw_inputs = raws})
+  end)
+end)
+
+-- Factory doctor WIRE (Pillar I): turn a placed assembling-machine into a self-feeding
+-- station — input inserters pulling from buffer chests into the machine, plus an output
+-- inserter into an output chest. Fair-play: inserters+chests come from the companion's
+-- inventory. A haul plan/skill then keeps the input chests stocked = supply-chain handoff.
+local INSERTER_PREF = {"fast-inserter", "inserter", "long-handed-inserter", "bulk-inserter"}
+local CHEST_PREF = {"steel-chest", "iron-chest", "wooden-chest"}
+
+-- Faces around a 3x3 machine centered at (cx,cy): inserter 2 tiles out, buffer chest 3
+-- tiles out. An inserter PICKS UP from its `direction` side and DROPS to the opposite
+-- side (verified in-game). So an INPUT inserter faces its chest (picks from chest, drops
+-- into the machine behind it); the OUTPUT inserter faces the machine (picks the product,
+-- drops into the chest behind it).
+local INPUT_FACES = {
+  {dx = 0,  dy = -2, dir = defines.direction.north, cdx = 0,  cdy = -3},  -- N: pick N chest, drop S into machine
+  {dx = -2, dy = 0,  dir = defines.direction.west,  cdx = -3, cdy = 0},   -- W: pick W chest, drop E into machine
+  {dx = 2,  dy = 0,  dir = defines.direction.east,  cdx = 3,  cdy = 0},   -- E: pick E chest, drop W into machine
+}
+local OUTPUT_FACE = {dx = 0, dy = 2, dir = defines.direction.north, cdx = 0, cdy = 3}  -- S: pick N from machine, drop S into chest
+
+local function place_io(surf, force, inv, m, face, ins_item, chest_item, tally)
+  local res = {}
+  local ipos = {x = m.position.x + face.dx, y = m.position.y + face.dy}
+  local cpos = {x = m.position.x + face.cdx, y = m.position.y + face.cdy}
+  if inv.get_item_count(chest_item) >= 1 and surf.can_place_entity{name = chest_item, position = cpos, force = force} then
+    if surf.create_entity{name = chest_item, position = cpos, force = force} then
+      inv.remove{name = chest_item, count = 1}; tally.chests = tally.chests + 1; res.chest = chest_item
+    end
+  else res.chest = "skip" end
+  if inv.get_item_count(ins_item) >= 1 and surf.can_place_entity{name = ins_item, position = ipos, direction = face.dir, force = force} then
+    if surf.create_entity{name = ins_item, position = ipos, direction = face.dir, force = force} then
+      inv.remove{name = ins_item, count = 1}; tally.inserters = tally.inserters + 1; res.inserter = ins_item
+    end
+  else res.inserter = "skip" end
+  return res
+end
+
+commands.add_command("fac_factory_wire", nil, function(cmd)
+  u.safe_command(function()
+    local args = u.parse_args("^(%S+)%s*(%d*)$", cmd.parameter)
+    local id, c = u.find_companion(args[1])
+    if not id then u.error_response("Companion not found"); return end
+    local radius = tonumber(args[2]) or 16
+    local e = c.entity
+
+    -- Nearest assembling-machine (with a recipe) to the companion.
+    local m, md = nil, math.huge
+    for _, x in ipairs(e.surface.find_entities_filtered{position = e.position, radius = radius, type = "assembling-machine", force = e.force}) do
+      if x.valid and x.get_recipe() then
+        local d = u.distance(e.position, x.position)
+        if d < md then md, m = d, x end
+      end
+    end
+    if not m then u.json_response({id = id, wired = false, reason = "no assembling-machine with a recipe within " .. radius}); return end
+
+    local inv = e.get_main_inventory()
+    local ins_item = find_in_inv(inv, INSERTER_PREF)
+    local chest_item = find_in_inv(inv, CHEST_PREF)
+    if not ins_item or not chest_item then
+      u.json_response({id = id, wired = false, machine = m.name, recipe = m.get_recipe().name,
+        reason = "need an inserter + a chest in inventory", have_inserter = ins_item or false, have_chest = chest_item or false}); return
+    end
+
+    -- One input face per solid ingredient (cap at 3), plus one output.
+    local n_inputs = 0
+    for _, ing in ipairs(m.get_recipe().ingredients) do if ing.type ~= "fluid" then n_inputs = n_inputs + 1 end end
+    n_inputs = math.min(n_inputs, #INPUT_FACES)
+
+    local tally = {inserters = 0, chests = 0}
+    local detail = {}
+    for i = 1, n_inputs do
+      local r = place_io(e.surface, e.force, inv, m, INPUT_FACES[i], ins_item, chest_item, tally); r.role = "input"
+      detail[#detail + 1] = r
+    end
+    local ro = place_io(e.surface, e.force, inv, m, OUTPUT_FACE, ins_item, chest_item, tally); ro.role = "output"
+    detail[#detail + 1] = ro
+
+    u.json_response({id = id, wired = tally.inserters > 0, machine = m.name,
+      at = {x = math.floor(m.position.x), y = math.floor(m.position.y)}, recipe = m.get_recipe().name,
+      placed = tally, inserter = ins_item, chest = chest_item, detail = detail,
+      note = "stock the input chest(s) with ingredients (haul) — the machine then runs and fills the output chest"})
   end)
 end)
