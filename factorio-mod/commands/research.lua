@@ -15,7 +15,10 @@ commands.add_command("fac_research_get", nil, function(cmd)
         if can then
           local ings = {}
           for _, ing in pairs(tech.research_unit_ingredients) do ings[#ings + 1] = ing.name end
-          available[#available + 1] = {name = name, units = tech.research_unit_count, ingredients = ings}
+          -- Flag Space Age trigger techs (research by crafting a trigger, not via labs;
+          -- research_set/add_research can't queue these).
+          available[#available + 1] = {name = name, units = tech.research_unit_count, ingredients = ings,
+                                        trigger = tech.prototype.research_trigger ~= nil or nil}
         end
       end
     end

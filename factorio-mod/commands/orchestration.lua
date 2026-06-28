@@ -306,8 +306,13 @@ local function tick_research(st)
     for _, pr in pairs(tech.prerequisites) do
       if not pr.researched then finish_step(st, "failed", "missing prereq " .. pr.name); return end
     end
+    -- Space Age trigger techs aren't lab-researchable (they fire when you craft/build
+    -- their trigger), so add_research can't queue them — say so clearly.
+    if tech.prototype.research_trigger then
+      finish_step(st, "failed", "trigger tech — research by crafting its trigger item, not via labs"); return
+    end
     if force.add_research(act.tech) then st.status = "running"
-    else finish_step(st, "failed", "add_research failed") end
+    else finish_step(st, "failed", "add_research failed (not lab-researchable here)") end
   end
 end
 
