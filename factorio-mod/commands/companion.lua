@@ -12,7 +12,8 @@ commands.add_command("fac_companion_list", nil, function(cmd)
           id = id,
           position = {x = math.floor(pos.x * 10) / 10, y = math.floor(pos.y * 10) / 10},
           health = math.floor(c.entity.health / c.entity.max_health * 100),
-          name = c.name
+          name = c.name,
+          is_player = c.is_player or nil
         }
       end
     end
@@ -59,10 +60,59 @@ commands.add_command("fac_companion_spawn", nil, function(cmd)
   end)
 end)
 
+-- Attach the AUTOPILOT to a real player's own character, so every companion skill
+-- and plan can drive the protagonist (move/mine/build/combat/plans). The player's
+-- live keyboard input still takes precedence per tick — this drives them when they
+-- let go / are AFK, and fully when no human is at the keyboard (headless). We never
+-- own/destroy the character; detach (or disappear) just releases it.
+-- Usage: "fac_attach_player <id> [playerName]"  (default: first player)
+commands.add_command("fac_attach_player", nil, function(cmd)
+  u.safe_command(function()
+    local args = u.parse_args("^(%d+)%s*(%S*)$", cmd.parameter)
+    local id = tonumber(args[1])
+    if not id then u.error_response("Usage: <id> [playerName]"); return end
+    if storage.companions[id] and not storage.companions[id].is_player then
+      u.error_response("id " .. id .. " is already a spawned companion"); return
+    end
+    local player = (args[2] ~= "" and game.get_player(args[2])) or game.players[1]
+    if not (player and player.valid) then u.error_response("No such player"); return end
+    if not player.character then u.error_response("Player has no character (dead / in map view)"); return end
+    if id >= storage.companion_next_id then storage.companion_next_id = id + 1 end
+    storage.companions[id] = {
+      entity = player.character, is_player = true, player_name = player.name,
+      color = u.get_companion_color(id), spawned_tick = game.tick,
+    }
+    u.json_response({id = id, attached_player = player.name,
+                     position = {x = math.floor(player.character.position.x), y = math.floor(player.character.position.y)}})
+  end)
+end)
+
+commands.add_command("fac_detach_player", nil, function(cmd)
+  u.safe_command(function()
+    local id = tonumber(cmd.parameter)
+    if not id then u.error_response("Need id"); return end
+    local c = storage.companions[id]
+    if not c or not c.is_player then u.error_response("id " .. tostring(id) .. " is not a player attachment"); return end
+    if storage.walking_queues then storage.walking_queues[id] = nil end
+    storage.companions[id] = nil
+    u.json_response({id = id, detached = true})
+  end)
+end)
+
 commands.add_command("fac_companion_disappear", nil, function(cmd)
   u.safe_command(function()
     local id, c = u.find_companion(cmd.parameter)
     if not id then u.error_response("Companion not found"); return end
+    -- Never destroy a real player's character — just detach the autopilot.
+    if c.is_player then
+      if c.label and c.label.valid then c.label.destroy() end
+      if storage.companion_markers and storage.companion_markers[id] and storage.companion_markers[id].valid then
+        storage.companion_markers[id].destroy(); storage.companion_markers[id] = nil
+      end
+      storage.companions[id] = nil
+      storage.walking_queues[id] = nil
+      u.json_response({id = id, detached = true, was_player = true}); return
+    end
     local pos, surf = c.entity.position, c.entity.surface
     local dropped = {}
     local inv = c.entity.get_inventory(defines.inventory.character_main)

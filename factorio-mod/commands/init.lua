@@ -46,7 +46,14 @@ end
 
 function M.get_companion(id)
   local c = storage.companions[id]
-  return (c and c.entity and c.entity.valid) and c or nil
+  if not c then return nil end
+  -- Player-attached unit: re-resolve the player's character each access (it changes
+  -- on respawn, and is nil while the player is dead / in map view).
+  if c.is_player then
+    local p = c.player_name and game.get_player(c.player_name)
+    c.entity = (p and p.valid) and p.character or nil
+  end
+  return (c.entity and c.entity.valid) and c or nil
 end
 
 function M.find_companion(identifier)

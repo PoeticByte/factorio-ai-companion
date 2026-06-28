@@ -230,9 +230,17 @@ local function is_free(cid)
   return true
 end
 
+-- An auto-assignable worker: free AND a robot (NOT an attached player character).
+-- The autonomous executor never silently commandeers the protagonist — the player's
+-- character only acts on a direct command or a step explicitly pinned to its id.
+local function is_auto_worker(cid)
+  local c = storage.companions[cid]
+  return c and not c.is_player and is_free(cid)
+end
+
 local function pick_free_companion()
   for cid in pairs(storage.companions or {}) do
-    if is_free(cid) then return cid end
+    if is_auto_worker(cid) then return cid end
   end
   return nil
 end
@@ -274,7 +282,7 @@ local function pick_worker(st)
   if not tp then return pick_free_companion() end
   local best, bd = nil, math.huge
   for cid in pairs(storage.companions or {}) do
-    if is_free(cid) then
+    if is_auto_worker(cid) then
       local c = u.get_companion(cid)
       local d = u.distance(c.entity.position, tp)
       if d < bd then bd, best = d, cid end

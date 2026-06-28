@@ -53,8 +53,21 @@ export const TOOLS: Record<string, {
     params: { companionId: { type: "number", required: true } }
   },
   companion_disappear: {
-    desc: "Despawn a companion (drops items)",
+    desc: "Despawn a companion (drops items). A player attachment is just detached, never destroyed.",
     rcon: "/fac_companion_disappear {companionId}",
+    params: { companionId: { type: "number", required: true } }
+  },
+  attach_player: {
+    desc: "Attach the autopilot to a real player's OWN character under this id, so every companion skill/plan can drive the protagonist (move/mine/build/combat/plans). The player's live input still wins per tick — this drives them when they're AFK, and fully when no human is at the keyboard. Never owns/destroys the character.",
+    rcon: "/fac_attach_player {companionId} {playerName}",
+    params: {
+      companionId: { type: "number", desc: "id to register the player character under", required: true },
+      playerName: { type: "string", desc: "Player to attach (default: first player)", default: "" }
+    }
+  },
+  detach_player: {
+    desc: "Release the autopilot from a player's character (does not destroy the character).",
+    rcon: "/fac_detach_player {companionId}",
     params: { companionId: { type: "number", required: true } }
   },
   companion_stop_all: {

@@ -82,7 +82,8 @@ subcommands.kill = function(player, args)
         if storage.companion_markers[cid].valid then storage.companion_markers[cid].destroy() end
         storage.companion_markers[cid] = nil
       end
-      if c.entity and c.entity.valid then c.entity.destroy(); killed = killed + 1 end
+      -- Never destroy a real player's character; killing just detaches the autopilot.
+      if not c.is_player and c.entity and c.entity.valid then c.entity.destroy(); killed = killed + 1 end
       storage.companions[cid] = nil
     end
   end
