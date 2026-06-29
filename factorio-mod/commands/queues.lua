@@ -532,12 +532,20 @@ end
 -- Shared fair-play helpers: physically walk (nav), take/give items one entity
 -- at a time, bounded by inventory and reach.
 
--- Nearest non-self entity to a position (the source/dest/burner the order refers to).
+-- Entity types haul actually moves items to/from — so a source/dest point that's
+-- near an inserter or power pole still resolves to the chest/machine, not the inserter.
+local HAUL_TYPES = {
+  ["container"] = true, ["logistic-container"] = true, ["infinity-container"] = true,
+  ["assembling-machine"] = true, ["furnace"] = true, ["storage-tank"] = true,
+  ["car"] = true, ["cargo-wagon"] = true, ["lab"] = true, ["rocket-silo"] = true,
+}
+
+-- Nearest haul-relevant entity (chest/machine) to a position.
 local function nearest_entity_at(c, pos, radius)
   local es = c.entity.surface.find_entities_filtered{position = pos, radius = radius or 3, force = c.entity.force}
   local best, bd = nil, math.huge
   for _, e in ipairs(es) do
-    if e.valid and e ~= c.entity then
+    if e.valid and e ~= c.entity and HAUL_TYPES[e.type] then
       local d = u.distance(e.position, pos)
       if d < bd then bd, best = d, e end
     end

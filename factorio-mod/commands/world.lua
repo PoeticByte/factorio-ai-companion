@@ -234,29 +234,19 @@ local function find_in_inv(inv, names)
   return nil
 end
 
--- Energize a freshly placed electric machine: if it isn't on a powered network,
--- drop a pole next to it (so its supply area covers the machine) and a connected
--- line of poles toward the nearest existing pole. Fair-play: poles from inventory;
--- Factorio auto-connects poles within wire reach.
-local function wire_power(c, machine)
-  local e = c.entity
-  local surf, force = e.surface, e.force
-  if not machine.prototype.electric_energy_source_prototype then return {power = "not electric"} end
-  if machine.is_connected_to_electric_network() then return {power = "already connected"} end
-  local inv = e.get_main_inventory()
+-- Drop a pole at `pos` + a connected line of poles toward the nearest existing pole,
+-- so `pos` (and its supply area) joins the power grid. Fair-play: poles from inventory;
+-- Factorio auto-connects poles within wire reach. Used to power a station's machine AND
+-- its inserters; chained stations graft onto each other's poles (search radius 200).
+local function connect_to_grid(surf, force, inv, pos)
   local pole_item = find_in_inv(inv, POLE_PRIORITY)
-  if not pole_item then return {power = "no pole in inventory"} end
+  if not pole_item then return {poles_placed = 0, reason = "no pole in inventory"} end
   local reach = prototypes.entity[pole_item].get_max_wire_distance() or 7.5
-
-  -- Nearest existing pole to graft the new chain onto.
   local target, td = nil, math.huge
-  for _, p in ipairs(surf.find_entities_filtered{position = machine.position, radius = 64, type = "electric-pole", force = force}) do
-    if p.valid and p ~= machine then
-      local d = u.distance(machine.position, p.position)
-      if d < td then td, target = d, p end
-    end
+  for _, p in ipairs(surf.find_entities_filtered{position = pos, radius = 200, type = "electric-pole", force = force}) do
+    if p.valid then local d = u.distance(pos, p.position); if d < td then td, target = d, p end end
   end
-  if not target then return {power = "no grid within 64 tiles"} end
+  if not target then return {poles_placed = 0, reason = "no grid within 200 tiles"} end
 
   local placed = 0
   local function drop(near)
@@ -269,13 +259,11 @@ local function wire_power(c, machine)
     return pole
   end
 
-  -- 1) Pole hugging the machine so the machine sits in its supply area.
-  local last = drop(machine.position)
-  if not last then return {power = "could not place pole"} end
-  -- 2) Step toward the target until the chain is within wire reach of it.
+  local last = drop(pos)                              -- pole hugging `pos`
+  if not last then return {poles_placed = 0, reason = "could not place pole"} end
   local step = math.max(2, reach - 1)
   local guard = 0
-  while u.distance(last.position, target.position) > reach and guard < 24 do
+  while u.distance(last.position, target.position) > reach and guard < 30 do
     guard = guard + 1
     local dx, dy = target.position.x - last.position.x, target.position.y - last.position.y
     local len = math.sqrt(dx * dx + dy * dy); if len < 0.01 then break end
@@ -283,9 +271,18 @@ local function wire_power(c, machine)
     if not nxt then break end
     last = nxt
   end
+  return {poles_placed = placed, pole = pole_item}
+end
 
-  return {power = machine.is_connected_to_electric_network() and "connected" or "poles placed (grid may be unpowered)",
-          poles_placed = placed, pole = pole_item}
+-- Energize a placed electric machine (used by factory_fix). Connects it to the grid
+-- if it isn't already powered.
+local function wire_power(c, machine)
+  local e = c.entity
+  if not machine.prototype.electric_energy_source_prototype then return {power = "not electric"} end
+  if machine.is_connected_to_electric_network() then return {power = "already connected"} end
+  local r = connect_to_grid(e.surface, e.force, e.get_main_inventory(), machine.position)
+  return {power = machine.is_connected_to_electric_network() and "connected" or (r.reason or "poles placed (grid may be unpowered)"),
+          poles_placed = r.poles_placed, pole = r.pole}
 end
 
 -- Fuel a burner machine from the companion's inventory (electric machines skip this).
@@ -392,22 +389,35 @@ end)
 local INSERTER_PREF = {"fast-inserter", "inserter", "long-handed-inserter", "bulk-inserter"}
 local CHEST_PREF = {"steel-chest", "iron-chest", "wooden-chest"}
 
--- Faces around a 3x3 machine centered at (cx,cy): inserter 2 tiles out, buffer chest 3
--- tiles out. An inserter PICKS UP from its `direction` side and DROPS to the opposite
--- side (verified in-game). So an INPUT inserter faces its chest (picks from chest, drops
--- into the machine behind it); the OUTPUT inserter faces the machine (picks the product,
--- drops into the chest behind it).
+-- An inserter PICKS from its `direction` side and DROPS to the opposite (verified
+-- in-game). INPUT faces point AWAY from the machine (pick from chest, drop into the
+-- machine behind); the OUTPUT face points AT the machine (pick the product, drop into
+-- the chest behind). ax/sign select the face.
 local INPUT_FACES = {
-  {dx = 0,  dy = -2, dir = defines.direction.north, cdx = 0,  cdy = -3},  -- N: pick N chest, drop S into machine
-  {dx = -2, dy = 0,  dir = defines.direction.west,  cdx = -3, cdy = 0},   -- W: pick W chest, drop E into machine
-  {dx = 2,  dy = 0,  dir = defines.direction.east,  cdx = 3,  cdy = 0},   -- E: pick E chest, drop W into machine
+  {ax = "y", sign = -1, dir = defines.direction.north},  -- N
+  {ax = "x", sign = -1, dir = defines.direction.west},   -- W
+  {ax = "x", sign = 1,  dir = defines.direction.east},   -- E
 }
-local OUTPUT_FACE = {dx = 0, dy = 2, dir = defines.direction.north, cdx = 0, cdy = 3}  -- S: pick N from machine, drop S into chest
+local OUTPUT_FACE = {ax = "y", sign = 1, dir = defines.direction.north}  -- S
+
+local function tc(v) return math.floor(v) + 0.5 end   -- snap to a tile center
+
+-- Inserter pos (0.5 tile past the machine edge) + buffer-chest pos (1.5 past), derived
+-- from the machine's REAL size + snapped to tile centers — so it works for both 3x3
+-- assemblers (odd, centered on .5) and 2x2 furnaces (even, centered on .0).
+local function face_positions(m, face)
+  local cx, cy = m.position.x, m.position.y
+  local hw, hh = (m.prototype.tile_width or 1) / 2, (m.prototype.tile_height or 1) / 2
+  if face.ax == "y" then
+    return {x = tc(cx), y = cy + face.sign * (hh + 0.5)}, {x = tc(cx), y = cy + face.sign * (hh + 1.5)}
+  else
+    return {x = cx + face.sign * (hw + 0.5), y = tc(cy)}, {x = cx + face.sign * (hw + 1.5), y = tc(cy)}
+  end
+end
 
 local function place_io(surf, force, inv, m, face, ins_item, chest_item, tally, inserters)
+  local ipos, cpos = face_positions(m, face)
   local res = {}
-  local ipos = {x = m.position.x + face.dx, y = m.position.y + face.dy}
-  local cpos = {x = m.position.x + face.cdx, y = m.position.y + face.cdy}
   if inv.get_item_count(chest_item) >= 1 and surf.can_place_entity{name = chest_item, position = cpos, force = force} then
     if surf.create_entity{name = chest_item, position = cpos, force = force} then
       inv.remove{name = chest_item, count = 1}; tally.chests = tally.chests + 1; res.chest = chest_item
@@ -420,7 +430,7 @@ local function place_io(surf, force, inv, m, face, ins_item, chest_item, tally, 
       inserters[#inserters + 1] = it
     end
   else res.inserter = "skip" end
-  return res
+  return res, cpos
 end
 
 -- Inserters need power too. Drop a pole next to any placed inserter that isn't on a
@@ -462,16 +472,18 @@ local function wire_machine_io(surf, force, inv, m)
   n_inputs = math.min(math.max(n_inputs, 1), #INPUT_FACES)
 
   local tally, detail, inserters = {inserters = 0, chests = 0}, {}, {}
+  local input_chest, output_chest
   for i = 1, n_inputs do
-    local r = place_io(surf, force, inv, m, INPUT_FACES[i], ins_item, chest_item, tally, inserters); r.role = "input"
+    local r, cpos = place_io(surf, force, inv, m, INPUT_FACES[i], ins_item, chest_item, tally, inserters); r.role = "input"
     detail[#detail + 1] = r
+    if i == 1 then input_chest = {x = math.floor(cpos.x), y = math.floor(cpos.y)} end
   end
-  local ro = place_io(surf, force, inv, m, OUTPUT_FACE, ins_item, chest_item, tally, inserters); ro.role = "output"
+  local ro, ocpos = place_io(surf, force, inv, m, OUTPUT_FACE, ins_item, chest_item, tally, inserters); ro.role = "output"
   detail[#detail + 1] = ro
+  output_chest = {x = math.floor(ocpos.x), y = math.floor(ocpos.y)}
   tally.poles_for_inserters = ensure_inserters_powered(surf, force, inv, inserters)
   return {ok = tally.inserters > 0, placed = tally, inserter = ins_item, chest = chest_item, detail = detail,
-          input_chest = {x = math.floor(m.position.x + INPUT_FACES[1].cdx), y = math.floor(m.position.y + INPUT_FACES[1].cdy)},
-          output_chest = {x = math.floor(m.position.x + OUTPUT_FACE.cdx), y = math.floor(m.position.y + OUTPUT_FACE.cdy)}}
+          input_chest = input_chest, output_chest = output_chest}
 end
 
 commands.add_command("fac_factory_wire", nil, function(cmd)
@@ -500,31 +512,97 @@ end)
 -- place the right machine near the companion + set recipe + energize (pole line / fuel)
 -- + wire I/O inserters & buffer chests. Returns io.input_chest so the orchestrator can
 -- immediately haul ingredients to it. Chains factory_fix's placement + factory_wire.
+-- Build one complete station for `recipe` near `near` (default: the companion):
+-- place machine + recipe + energize + wire I/O. Returns a result table (no JSON).
+local function build_one_station(c, recipe, near)
+  local e = c.entity
+  local machine = (recipe.category == "smelting") and "stone-furnace" or "assembling-machine-2"
+  local inv = e.get_main_inventory()
+  if inv.get_item_count(machine) < 1 then return {built = false, recipe = recipe.name, reason = "need " .. machine} end
+  local spot = e.surface.find_non_colliding_position(machine, near or e.position, 24, 1)
+  if not spot then return {built = false, recipe = recipe.name, reason = "no space"} end
+  local m = e.surface.create_entity{name = machine, position = spot, force = e.force}
+  if not m then return {built = false, recipe = recipe.name, reason = "place failed"} end
+  inv.remove{name = machine, count = 1}
+  if machine ~= "stone-furnace" then pcall(function() m.set_recipe(recipe.name) end) end
+  -- Connect the station to the grid BEFORE wiring (powers the machine if electric AND
+  -- the inserters around it); wire_machine_io's straggler poles then join this line.
+  -- Done for EVERY station — a furnace's machine needs no power but its inserters do.
+  local power = connect_to_grid(e.surface, e.force, inv, m.position)
+  if m.prototype.electric_energy_source_prototype then power.machine_powered = m.is_connected_to_electric_network() end
+  local fuel = fuel_burner(c, m)
+  local io = wire_machine_io(e.surface, e.force, inv, m)
+  return {built = true, machine = machine, recipe = recipe.name,
+          at = {x = math.floor(spot.x), y = math.floor(spot.y)}, power = power, fuel = fuel, io = io}
+end
+
 commands.add_command("fac_build_station", nil, function(cmd)
   u.safe_command(function()
     local args = u.parse_args("^(%S+)%s+(%S+)$", cmd.parameter)
     local id, c = u.find_companion(args[1])
     if not id then u.error_response("Companion not found"); return end
-    local recipe_name = args[2]
-    local e = c.entity
-    local recipe = e.force.recipes[recipe_name] or prototypes.recipe[recipe_name]
-    if not recipe then u.error_response("Unknown recipe: " .. tostring(recipe_name)); return end
-    local machine = (recipe.category == "smelting") and "stone-furnace" or "assembling-machine-2"
-    local inv = e.get_main_inventory()
-    if inv.get_item_count(machine) < 1 then
-      u.json_response({id = id, built = false, recipe = recipe_name, reason = "need " .. machine .. " in inventory"}); return
+    local recipe = c.entity.force.recipes[args[2]] or prototypes.recipe[args[2]]
+    if not recipe then u.error_response("Unknown recipe: " .. tostring(args[2])); return end
+    local res = build_one_station(c, recipe)
+    res.id = id
+    res.note = res.built and "haul ingredients to io.input_chest; products collect in io.output_chest"
+              or ("not built: " .. (res.reason or "?"))
+    u.json_response(res)
+  end)
+end)
+
+-- AUTO FACTORY (Pillar I apex): given a target item + rate, walk the recipe DAG and
+-- build a COMPLETE station for the target and every intermediate (place+power/fuel+wire),
+-- then report the material-flow map (each producer's output_chest -> each consumer's
+-- input_chest) + the raw inputs to supply. The orchestrator hauls those edges (or the
+-- player belts them) and feeds raws. "Build me a factory for X" in one command.
+commands.add_command("fac_auto_factory", nil, function(cmd)
+  u.safe_command(function()
+    local args = u.parse_args("^(%S+)%s+(%S+)%s*([%d.]*)$", cmd.parameter)
+    local id, c = u.find_companion(args[1])
+    if not id then u.error_response("Companion not found"); return end
+    local item = args[2]
+    local rate = tonumber(args[3]) or 1
+    local force = c.entity.force
+
+    -- Intermediates (items with a real production recipe) vs raws.
+    local recipes, raw, order = {}, {}, {}
+    local function walk(it, depth)
+      if recipes[it] or depth > 12 then return end
+      local r = recipe_for(force, it)
+      local makes = false
+      if r then for _, p in ipairs(r.products) do if p.name == it then makes = true; break end end end
+      if not (r and makes) then raw[it] = true; return end
+      recipes[it] = r; order[#order + 1] = it
+      for _, ing in ipairs(r.ingredients) do if ing.type ~= "fluid" then walk(ing.name, depth + 1) end end
     end
-    local spot = e.surface.find_non_colliding_position(machine, e.position, 16, 1)
-    if not spot then u.json_response({id = id, built = false, reason = "no space nearby"}); return end
-    local m = e.surface.create_entity{name = machine, position = spot, force = e.force}
-    if not m then u.json_response({id = id, built = false, reason = "place failed"}); return end
-    inv.remove{name = machine, count = 1}
-    if machine ~= "stone-furnace" then pcall(function() m.set_recipe(recipe_name) end) end
-    local power = wire_power(c, m)
-    local fuel = fuel_burner(c, m)
-    local io = wire_machine_io(e.surface, e.force, inv, m)
-    u.json_response({id = id, built = true, machine = machine, recipe = recipe_name,
-      at = {x = math.floor(spot.x), y = math.floor(spot.y)}, power = power, fuel = fuel, io = io,
-      note = "haul ingredients to io.input_chest; products collect in io.output_chest"})
+    walk(item, 0)
+
+    -- Build a station per intermediate, spread out in a row so the I/O doesn't collide.
+    local stations, built = {}, {}
+    local bx, by = c.entity.position.x, c.entity.position.y
+    for i, it in ipairs(order) do
+      local st = build_one_station(c, recipes[it], {x = bx + i * 12, y = by})
+      st.produces = it
+      stations[it] = st
+      built[#built + 1] = st
+    end
+
+    -- Material-flow edges: producer output_chest -> consumer input_chest.
+    local flow = {}
+    for it, st in pairs(stations) do
+      if st.built and st.io and st.io.ok then
+        for _, ing in ipairs(recipes[it].ingredients) do
+          if ing.type ~= "fluid" and stations[ing.name] and stations[ing.name].built and stations[ing.name].io.ok then
+            flow[#flow + 1] = {item = ing.name, from = stations[ing.name].io.output_chest, to = st.io.input_chest}
+          end
+        end
+      end
+    end
+    local raws = {}
+    for r in pairs(raw) do raws[#raws + 1] = r end
+
+    u.json_response({id = id, item = item, rate = rate, stations = built, flow = flow, raw_inputs = raws,
+      note = "stations placed+powered+wired. haul each flow edge (from->to) and supply raw_inputs to the leaf input_chests."})
   end)
 end)

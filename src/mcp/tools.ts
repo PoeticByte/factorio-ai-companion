@@ -587,6 +587,15 @@ export const TOOLS: Record<string, {
       recipe: { type: "string", desc: "Recipe to build a station for, e.g. iron-gear-wheel", required: true }
     }
   },
+  auto_factory: {
+    desc: "Pillar I APEX — 'build me a factory for X' in one command. Walks the recipe DAG for the target item and builds a COMPLETE station (place+power/fuel+wire) for the target and EVERY intermediate, then returns the material-flow map (each producer's output_chest → each consumer's input_chest) + raw_inputs to supply. Then haul each flow edge (or belt them) and feed raws to the leaf input chests. Needs enough machines/inserters/chests/poles (+fuel) in inventory for all stations.",
+    rcon: "/fac_auto_factory {companionId} {item} {rate}",
+    params: {
+      companionId: { type: "number", required: true },
+      item: { type: "string", desc: "Target item, e.g. electronic-circuit", required: true },
+      rate: { type: "number", desc: "Target items/sec (informational)", default: 1 }
+    }
+  },
   production_plan: {
     desc: "Production planner (Pillar I): given a target item + rate/sec, recurse the recipe DAG to compute rate + baseline machine count for every intermediate and the raw inputs needed. The ratio math behind \"build me X/s of Y\".",
     rcon: "/fac_production_plan {companionId} {item} {rate}",
