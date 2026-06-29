@@ -579,6 +579,14 @@ export const TOOLS: Record<string, {
       radius: { type: "number", desc: "Search radius for the machine", default: 16 }
     }
   },
+  build_station: {
+    desc: "Pillar I capstone — build a COMPLETE working station for a recipe in one shot: place the right machine near the companion (assembler, or furnace for smelting) + set recipe + energize (drop a pole line to grid / fuel a burner) + wire I/O inserters & buffer chests. Returns io.input_chest so you can immediately haul ingredients to it (products collect in io.output_chest). Needs the machine + inserters + chests (+ poles/fuel) in inventory. Chain per production_plan step to build a whole factory.",
+    rcon: "/fac_build_station {companionId} {recipe}",
+    params: {
+      companionId: { type: "number", required: true },
+      recipe: { type: "string", desc: "Recipe to build a station for, e.g. iron-gear-wheel", required: true }
+    }
+  },
   production_plan: {
     desc: "Production planner (Pillar I): given a target item + rate/sec, recurse the recipe DAG to compute rate + baseline machine count for every intermediate and the raw inputs needed. The ratio math behind \"build me X/s of Y\".",
     rcon: "/fac_production_plan {companionId} {item} {rate}",
