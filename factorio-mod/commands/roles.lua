@@ -34,6 +34,15 @@ function M.assign_role(cid, role, center, radius, item)
   return {assigned = true, role = role, center = center, radius = radius or 24, item = item}
 end
 
+-- Continuous courier role: ferry `item` from `source` to `dest` whenever source has it.
+function M.assign_courier(cid, item, source, dest, batch)
+  local c = u.get_companion(cid)
+  if not c or not c.entity or not c.entity.valid then return {error = "Invalid companion"} end
+  storage.roles = storage.roles or {}
+  storage.roles[cid] = {role = "courier", item = item, source = source, dest = dest, batch = batch or 50}
+  return {assigned = true, role = "courier", item = item, source = source, dest = dest, batch = batch or 50}
+end
+
 function M.clear_role(cid)
   if storage.roles and storage.roles[cid] then storage.roles[cid] = nil; return {cleared = true} end
   return {cleared = false}
@@ -76,6 +85,19 @@ function M.tick_roles()
           end
         end
         if dirty then queues.start_repair(cid, role.center, role.radius, role.item) end
+
+      elseif role.role == "courier" and role.item and role.source and role.dest then
+        -- Continuous logistics: ferry a batch whenever the source has the item.
+        -- Re-triggers each idle tick (like refueler) -> a self-sustaining supply line
+        -- between two stations (e.g. furnace output_chest -> assembler input_chest).
+        local has = false
+        for _, ent in ipairs(surf.find_entities_filtered{position = role.source, radius = 3, force = e.force}) do
+          if ent.valid and ent ~= e then
+            local oi = ent.get_output_inventory and ent.get_output_inventory()
+            if oi and oi.get_item_count(role.item) > 0 then has = true; break end
+          end
+        end
+        if has then queues.start_haul(cid, role.item, role.source, role.dest, role.batch or 50) end
       end
     end
   end
@@ -85,7 +107,8 @@ function M.list_roles()
   local out = {}
   if storage.roles then
     for cid, r in pairs(storage.roles) do
-      out[#out + 1] = {cid = cid, role = r.role, center = r.center, radius = r.radius, item = r.item}
+      out[#out + 1] = {cid = cid, role = r.role, center = r.center, radius = r.radius,
+                       item = r.item, source = r.source, dest = r.dest}
     end
   end
   return out
@@ -107,6 +130,22 @@ commands.add_command("fac_assign_role", nil, function(cmd)
     local radius = tonumber(args[5]) or 24
     local item = (args[6] ~= "" and args[6]) or nil
     local res = M.assign_role(id, role, {x = x, y = y}, radius, item)
+    res.id = id
+    u.json_response(res)
+  end)
+end)
+
+-- "fac_assign_courier <id> <item> <sx> <sy> <dx> <dy> [batch]"
+commands.add_command("fac_assign_courier", nil, function(cmd)
+  u.safe_command(function()
+    local args = u.parse_args("^(%S+)%s+(%S+)%s+(%-?%d+%.?%d*)%s+(%-?%d+%.?%d*)%s+(%-?%d+%.?%d*)%s+(%-?%d+%.?%d*)%s*(%d*)$", cmd.parameter)
+    local id = u.find_companion(args[1])
+    if not id then u.error_response("Companion not found"); return end
+    local item = args[2]
+    local sx, sy, dx, dy = tonumber(args[3]), tonumber(args[4]), tonumber(args[5]), tonumber(args[6])
+    if not (item and sx and sy and dx and dy) then u.error_response("Usage: <id> <item> <sx> <sy> <dx> <dy> [batch]"); return end
+    local batch = tonumber(args[7]) or 50
+    local res = M.assign_courier(id, item, {x = sx, y = sy}, {x = dx, y = dy}, batch)
     res.id = id
     u.json_response(res)
   end)

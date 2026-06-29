@@ -519,8 +519,21 @@ export const TOOLS: Record<string, {
       item: { type: "string", desc: "fuel item (refueler) or turret ammo (maintainer)", default: "" }
     }
   },
+  assign_courier: {
+    desc: "Assign a CONTINUOUS courier role: the companion ferries `item` from a source position to a dest position whenever the source has it (re-triggers like refueler) — a self-sustaining supply line between two stations (e.g. a furnace's output_chest → an assembler's input_chest from auto_factory's flow map). Persists across saves; clear with clear_role.",
+    rcon: "/fac_assign_courier {companionId} {item} {sx} {sy} {dx} {dy} {batch}",
+    params: {
+      companionId: { type: "number", required: true },
+      item: { type: "string", desc: "Item to ferry", required: true },
+      sx: { type: "number", desc: "source x", required: true },
+      sy: { type: "number", desc: "source y", required: true },
+      dx: { type: "number", desc: "dest x", required: true },
+      dy: { type: "number", desc: "dest y", required: true },
+      batch: { type: "number", desc: "items per trip", default: 50 }
+    }
+  },
   clear_role: {
-    desc: "Clear a companion's standing role.",
+    desc: "Clear a companion's standing role (guard/refueler/maintainer/courier).",
     rcon: "/fac_clear_role {companionId}",
     params: { companionId: { type: "number", required: true } }
   },
