@@ -558,11 +558,12 @@ end)
 -- player belts them) and feeds raws. "Build me a factory for X" in one command.
 commands.add_command("fac_auto_factory", nil, function(cmd)
   u.safe_command(function()
-    local args = u.parse_args("^(%S+)%s+(%S+)%s*([%d.]*)$", cmd.parameter)
+    local args = u.parse_args("^(%S+)%s+(%S+)%s*([%d.]*)%s*(%d*)$", cmd.parameter)
     local id, c = u.find_companion(args[1])
     if not id then u.error_response("Companion not found"); return end
     local item = args[2]
     local rate = tonumber(args[3]) or 1
+    local connect = args[4] ~= "0"   -- default on: auto-assign couriers to free companions
     local force = c.entity.force
 
     -- Intermediates (items with a real production recipe) vs raws.
@@ -602,7 +603,30 @@ commands.add_command("fac_auto_factory", nil, function(cmd)
     local raws = {}
     for r in pairs(raw) do raws[#raws + 1] = r end
 
+    -- Auto-connect: bind a free companion as a continuous courier per flow edge, so
+    -- the factory runs hands-off. Free = valid + not already roled. Sets the courier
+    -- role directly (same shape as roles.assign_courier) — roles.tick_roles drives it.
+    local couriers, unconnected = {}, {}
+    if connect and #flow > 0 then
+      storage.roles = storage.roles or {}
+      local avail = {}
+      for cid2, c2 in pairs(storage.companions or {}) do
+        if c2.entity and c2.entity.valid and not storage.roles[cid2] then avail[#avail + 1] = cid2 end
+      end
+      table.sort(avail)
+      for i, edge in ipairs(flow) do
+        local cid2 = avail[i]
+        if cid2 then
+          storage.roles[cid2] = {role = "courier", item = edge.item, source = edge.from, dest = edge.to, batch = 50}
+          couriers[#couriers + 1] = {cid = cid2, item = edge.item}
+        else
+          unconnected[#unconnected + 1] = edge
+        end
+      end
+    end
+
     u.json_response({id = id, item = item, rate = rate, stations = built, flow = flow, raw_inputs = raws,
-      note = "stations placed+powered+wired. haul each flow edge (from->to) and supply raw_inputs to the leaf input_chests."})
+      couriers = couriers, unconnected = unconnected,
+      note = "stations built; couriers ferry the flow edges (spawn more companions for any 'unconnected'). Supply raw_inputs to the leaf input_chests and it runs."})
   end)
 end)

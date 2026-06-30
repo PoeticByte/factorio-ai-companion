@@ -601,12 +601,13 @@ export const TOOLS: Record<string, {
     }
   },
   auto_factory: {
-    desc: "Pillar I APEX — 'build me a factory for X' in one command. Walks the recipe DAG for the target item and builds a COMPLETE station (place+power/fuel+wire) for the target and EVERY intermediate, then returns the material-flow map (each producer's output_chest → each consumer's input_chest) + raw_inputs to supply. Then haul each flow edge (or belt them) and feed raws to the leaf input chests. Needs enough machines/inserters/chests/poles (+fuel) in inventory for all stations.",
-    rcon: "/fac_auto_factory {companionId} {item} {rate}",
+    desc: "Pillar I APEX — 'build me a factory for X' in one command. Walks the recipe DAG and builds a COMPLETE station (place+power/fuel+wire) for the target and EVERY intermediate, then (connect=1, default) auto-assigns a free companion as a continuous COURIER for each material-flow edge so the factory runs hands-off. Returns stations, flow map, couriers assigned, any `unconnected` edges (spawn more companions for those), and raw_inputs. Just supply raws to the leaf input chests. Needs enough machines/inserters/chests/poles(+fuel) in the builder's inventory + a power grid nearby + one free companion per flow edge.",
+    rcon: "/fac_auto_factory {companionId} {item} {rate} {connect}",
     params: {
-      companionId: { type: "number", required: true },
+      companionId: { type: "number", desc: "Builder companion", required: true },
       item: { type: "string", desc: "Target item, e.g. electronic-circuit", required: true },
-      rate: { type: "number", desc: "Target items/sec (informational)", default: 1 }
+      rate: { type: "number", desc: "Target items/sec (informational)", default: 1 },
+      connect: { type: "number", desc: "1 = auto-assign couriers (default), 0 = just build + report flow", default: 1 }
     }
   },
   production_plan: {
