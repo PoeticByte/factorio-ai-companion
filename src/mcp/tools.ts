@@ -75,6 +75,14 @@ export const TOOLS: Record<string, {
     rcon: "/fac_companion_stop_all {companionId}",
     params: { companionId: { type: "number", required: true } }
   },
+  set_specialty: {
+    desc: "Crew specialization (Pillar II): tag a companion's specialty so the plan executor's auto-allocation prefers it for matching jobs — miner→mine, builder→build_line/craft, hauler→haul (fighter reserved; any=clear). Among matching specialists it still picks the nearest. Emergent division of labor.",
+    rcon: "/fac_set_specialty {companionId} {specialty}",
+    params: {
+      companionId: { type: "number", required: true },
+      specialty: { type: "string", desc: "miner | builder | hauler | fighter | any", required: true }
+    }
+  },
 
   // Movement
   move_to: {
@@ -689,6 +697,22 @@ export const TOOLS: Record<string, {
     params: {
       companionId: { type: "number", required: true },
       name: { type: "string", desc: "Remembered location name", required: true }
+    }
+  },
+  survey_remember: {
+    desc: "Pillar III — the buddy learns the map: scan resource patches around the companion and auto-remember ONE location per resource type at its centroid (kind='ore', shown as a map tag). Builds up persistent knowledge of where the ores are. Recall later with memory_nearest/recall/goto.",
+    rcon: "/fac_survey_remember {companionId} {radius}",
+    params: {
+      companionId: { type: "number", required: true },
+      radius: { type: "number", desc: "Scan radius", default: 100 }
+    }
+  },
+  memory_nearest: {
+    desc: "Recall the NEAREST remembered location to the companion, optionally filtered by kind/name substring (e.g. 'ore', 'iron'). The buddy using what it knows — pair with memory_goto.",
+    rcon: "/fac_memory_nearest {companionId} {query}",
+    params: {
+      companionId: { type: "number", required: true },
+      query: { type: "string", desc: "Optional kind/name filter (e.g. ore, iron, base)", default: "" }
     }
   },
 

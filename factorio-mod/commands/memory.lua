@@ -207,4 +207,59 @@ commands.add_command("fac_memory_goto", nil, function(cmd)
   end)
 end)
 
+-- ---- Auto-survey + remember resource patches (Pillar III: the buddy learns the map).
+-- Scan resources in radius, group by type, and remember ONE location per type at its
+-- centroid (kind="ore", with a map tag) — so the companion builds up knowledge of where
+-- the ores are, on its own. "fac_survey_remember <companionId> [radius]"
+commands.add_command("fac_survey_remember", nil, function(cmd)
+  u.safe_command(function()
+    M.init()
+    local args = u.parse_args("^(%S+)%s*(%d*)$", cmd.parameter)
+    local id, c = u.find_companion(args[1])
+    if not id then u.error_response("Companion not found"); return end
+    local radius = tonumber(args[2]) or 100
+    local e = c.entity
+    local area = {{e.position.x - radius, e.position.y - radius}, {e.position.x + radius, e.position.y + radius}}
+    local agg = {}
+    for _, r in ipairs(e.surface.find_entities_filtered{area = area, type = "resource"}) do
+      local a = agg[r.name] or {sx = 0, sy = 0, n = 0, amount = 0}
+      a.sx = a.sx + r.position.x; a.sy = a.sy + r.position.y; a.n = a.n + 1; a.amount = a.amount + (r.amount or 0)
+      agg[r.name] = a
+    end
+    local saved = {}
+    for name, a in pairs(agg) do
+      local lname = name .. " patch"
+      local key = lname:lower()
+      local entry = loc_entry(lname, "ore", a.sx / a.n, a.sy / a.n, "~" .. a.amount .. " (auto-surveyed)")
+      storage.memory.locations[key] = entry
+      set_location_tag(key, entry, id)
+      saved[#saved + 1] = {name = lname, x = entry.x, y = entry.y, amount = a.amount}
+    end
+    u.json_response({id = id, radius = radius, remembered = saved, count = #saved})
+  end)
+end)
+
+-- ---- Nearest remembered location by kind/name to the companion (the buddy uses what
+-- it knows). "fac_memory_nearest <companionId> [kind|substring]"
+commands.add_command("fac_memory_nearest", nil, function(cmd)
+  u.safe_command(function()
+    M.init()
+    local args = u.parse_args("^(%S+)%s*(.*)$", cmd.parameter)
+    local id, c = u.find_companion(args[1])
+    if not id then u.error_response("Companion not found"); return end
+    local q = (args[2] and args[2] ~= "") and args[2]:lower() or nil
+    local pos = c.entity.position
+    local best, bd = nil, math.huge
+    for _, ent in pairs(storage.memory.locations) do
+      local match = not q or (ent.name:lower():find(q, 1, true) or (ent.kind and ent.kind:lower():find(q, 1, true)))
+      if match then
+        local d = math.sqrt((ent.x - pos.x) ^ 2 + (ent.y - pos.y) ^ 2)
+        if d < bd then bd, best = d, ent end
+      end
+    end
+    if not best then u.json_response({id = id, error = "no remembered location matching '" .. tostring(q) .. "'"}); return end
+    u.json_response({id = id, nearest = best, distance = math.floor(bd)})
+  end)
+end)
+
 return M

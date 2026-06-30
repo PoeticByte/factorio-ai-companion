@@ -275,20 +275,25 @@ local function step_target_pos(st)
   return nil
 end
 
--- Negotiated allocation: the nearest free companion to the job (least walking →
--- emergent division of labor across the crew). Falls back to any free one.
+-- Which crew specialty each action prefers (crew specialization, Pillar II).
+local ACTION_SPECIALTY = {mine = "miner", build_line = "builder", craft = "builder", haul = "hauler"}
+
+-- Negotiated allocation: prefer a FREE companion whose specialty matches the job,
+-- nearest first (emergent division of labor); else the nearest free companion of any
+-- specialty. Distance = least walking.
 local function pick_worker(st)
   local tp = step_target_pos(st)
-  if not tp then return pick_free_companion() end
-  local best, bd = nil, math.huge
+  local want = st.action and ACTION_SPECIALTY[st.action.type]
+  local best, bd, sbest, sbd = nil, math.huge, nil, math.huge
   for cid in pairs(storage.companions or {}) do
     if is_auto_worker(cid) then
       local c = u.get_companion(cid)
-      local d = u.distance(c.entity.position, tp)
+      local d = tp and u.distance(c.entity.position, tp) or 0
       if d < bd then bd, best = d, cid end
+      if want and storage.companions[cid].specialty == want and d < sbd then sbd, sbest = d, cid end
     end
   end
-  return best
+  return sbest or best   -- matching specialist preferred, else nearest free worker
 end
 
 -- Research is force-level (no companion); set it, then watch until researched.

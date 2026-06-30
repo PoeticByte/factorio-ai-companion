@@ -13,12 +13,28 @@ commands.add_command("fac_companion_list", nil, function(cmd)
           position = {x = math.floor(pos.x * 10) / 10, y = math.floor(pos.y * 10) / 10},
           health = math.floor(c.entity.health / c.entity.max_health * 100),
           name = c.name,
-          is_player = c.is_player or nil
+          is_player = c.is_player or nil,
+          specialty = c.specialty
         }
       end
     end
     table.sort(list, function(a, b) return a.id < b.id end)
     u.json_response({companions = list, count = #list})
+  end)
+end)
+
+-- Crew specialization (Pillar II): tag a companion so the plan executor's auto-
+-- allocation prefers it for matching work. "fac_set_specialty <id> miner|builder|hauler|fighter|any"
+commands.add_command("fac_set_specialty", nil, function(cmd)
+  u.safe_command(function()
+    local args = u.parse_args("^(%S+)%s+(%S+)$", cmd.parameter)
+    local id, c = u.find_companion(args[1])
+    if not id then u.error_response("Companion not found"); return end
+    local spec = args[2]
+    local valid = {miner = true, builder = true, hauler = true, fighter = true, any = true}
+    if not valid[spec] then u.error_response("specialty: miner|builder|hauler|fighter|any"); return end
+    c.specialty = (spec ~= "any") and spec or nil
+    u.json_response({id = id, specialty = spec})
   end)
 end)
 
