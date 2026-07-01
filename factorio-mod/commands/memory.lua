@@ -235,6 +235,23 @@ commands.add_command("fac_survey_remember", nil, function(cmd)
       set_location_tag(key, entry, id)
       saved[#saved + 1] = {name = lname, x = entry.x, y = entry.y, amount = a.amount}
     end
+
+    -- Also map threats: remember the NEAREST enemy nest (+ how many are around) as a
+    -- "threat" memory point, so the buddy knows where danger is (memory_nearest threat,
+    -- goto, guard roles). Nearest (not centroid) stays meaningful when nests are scattered.
+    local nearest_sp, nsd, nests = nil, math.huge, 0
+    for _, sp in ipairs(e.surface.find_entities_filtered{area = area, type = "unit-spawner", force = "enemy"}) do
+      nests = nests + 1
+      local d = (sp.position.x - e.position.x) ^ 2 + (sp.position.y - e.position.y) ^ 2
+      if d < nsd then nsd, nearest_sp = d, sp end
+    end
+    if nearest_sp then
+      local entry = loc_entry("enemy base", "threat", nearest_sp.position.x, nearest_sp.position.y, nests .. " nests within " .. radius)
+      storage.memory.locations["enemy base"] = entry
+      set_location_tag("enemy base", entry, id)
+      saved[#saved + 1] = {name = "enemy base", x = entry.x, y = entry.y, kind = "threat", nests = nests}
+    end
+
     u.json_response({id = id, radius = radius, remembered = saved, count = #saved})
   end)
 end)

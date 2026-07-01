@@ -700,7 +700,7 @@ export const TOOLS: Record<string, {
     }
   },
   survey_remember: {
-    desc: "Pillar III — the buddy learns the map: scan resource patches around the companion and auto-remember ONE location per resource type at its centroid (kind='ore', shown as a map tag). Builds up persistent knowledge of where the ores are. Recall later with memory_nearest/recall/goto.",
+    desc: "Pillar III — the buddy learns the map: scan around the companion and auto-remember ONE location per resource type at its centroid (kind='ore') AND the nearest enemy nest (kind='threat', with nest count), all shown as map tags. Builds persistent knowledge of where the ores and dangers are. Recall with memory_nearest/recall/goto.",
     rcon: "/fac_survey_remember {companionId} {radius}",
     params: {
       companionId: { type: "number", required: true },
