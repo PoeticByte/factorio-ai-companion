@@ -278,22 +278,39 @@ end
 -- Which crew specialty each action prefers (crew specialization, Pillar II).
 local ACTION_SPECIALTY = {mine = "miner", build_line = "builder", craft = "builder", haul = "hauler"}
 
--- Negotiated allocation: prefer a FREE companion whose specialty matches the job,
--- nearest first (emergent division of labor); else the nearest free companion of any
--- specialty. Distance = least walking.
+-- Can this companion actually DO the job right now (carries the materials / can craft)?
+-- mine/haul/research need nothing carried.
+local function can_do(cid, act)
+  if not act then return true end
+  if act.type == "build_line" then
+    local c = u.get_companion(cid)
+    return c and c.entity.get_main_inventory().get_item_count(act.entity) >= 1 or false
+  elseif act.type == "craft" then
+    local c = u.get_companion(cid)
+    return c and c.entity.get_craftable_count(act.recipe) >= 1 or false
+  end
+  return true
+end
+
+-- Capability-aware negotiated allocation (Pillar II): among FREE companions, prefer in
+-- tiers — (can-do AND matching specialty) > can-do > matching specialty > any — and
+-- nearest within the chosen tier. So a build job goes to a companion that actually has
+-- the materials (and ideally a builder), not just whoever's closest → fewer failed steps.
 local function pick_worker(st)
   local tp = step_target_pos(st)
   local want = st.action and ACTION_SPECIALTY[st.action.type]
-  local best, bd, sbest, sbd = nil, math.huge, nil, math.huge
+  local best, bd = {}, {math.huge, math.huge, math.huge, math.huge}
   for cid in pairs(storage.companions or {}) do
     if is_auto_worker(cid) then
       local c = u.get_companion(cid)
       local d = tp and u.distance(c.entity.position, tp) or 0
-      if d < bd then bd, best = d, cid end
-      if want and storage.companions[cid].specialty == want and d < sbd then sbd, sbest = d, cid end
+      local cap = can_do(cid, st.action)
+      local spec = want and storage.companions[cid].specialty == want
+      local tier = (cap and spec and 1) or (cap and 2) or (spec and 3) or 4
+      if d < bd[tier] then bd[tier] = d; best[tier] = cid end
     end
   end
-  return sbest or best   -- matching specialist preferred, else nearest free worker
+  return best[1] or best[2] or best[3] or best[4]
 end
 
 -- Research is force-level (no companion); set it, then watch until researched.
