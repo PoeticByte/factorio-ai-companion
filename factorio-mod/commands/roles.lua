@@ -4,6 +4,7 @@
 -- Roles persist across saves. Companion must carry its own supplies (fuel/ammo/repair-packs).
 local u = require("commands.init")
 local queues = require("commands.queues")
+local memory = require("commands.memory")
 
 local M = {}
 
@@ -56,6 +57,13 @@ function M.tick_roles()
     local c = u.get_companion(cid)
     if not c or not c.entity or not c.entity.valid then
       storage.roles[cid] = nil
+    elseif role.role == "scout" then
+      -- Passive continuous map-learning: survey+remember around the companion every
+      -- ~10s, EVEN while busy (so a scout following the player maps as it travels).
+      if (game.tick - (role.last_survey or 0)) > 600 then
+        role.last_survey = game.tick
+        memory.survey(cid, c, role.radius or 100)
+      end
     elseif not busy(cid) then
       local e = c.entity
       local surf = e.surface
@@ -122,8 +130,8 @@ commands.add_command("fac_assign_role", nil, function(cmd)
     local id = u.find_companion(args[1])
     if not id then u.error_response("Companion not found"); return end
     local role = args[2]
-    if role ~= "guard" and role ~= "refueler" and role ~= "maintainer" then
-      u.error_response("role must be guard|refueler|maintainer"); return
+    if role ~= "guard" and role ~= "refueler" and role ~= "maintainer" and role ~= "scout" then
+      u.error_response("role must be guard|refueler|maintainer|scout"); return
     end
     local x, y = tonumber(args[3]), tonumber(args[4])
     if not x or not y then u.error_response("Invalid coordinates"); return end

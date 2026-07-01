@@ -207,10 +207,46 @@ commands.add_command("fac_memory_goto", nil, function(cmd)
   end)
 end)
 
--- ---- Auto-survey + remember resource patches (Pillar III: the buddy learns the map).
--- Scan resources in radius, group by type, and remember ONE location per type at its
--- centroid (kind="ore", with a map tag) — so the companion builds up knowledge of where
--- the ores are, on its own. "fac_survey_remember <companionId> [radius]"
+-- ---- Auto-survey + remember resources/threats (Pillar III: the buddy learns the map).
+-- Scan in radius around companion `c`: remember ONE location per resource type at its
+-- centroid (kind="ore") + the nearest enemy nest (kind="threat"), each with a map tag.
+-- Returns the saved list. Reusable by the scout role for continuous learning.
+function M.survey(id, c, radius)
+  M.init()
+  local e = c.entity
+  radius = radius or 100
+  local area = {{e.position.x - radius, e.position.y - radius}, {e.position.x + radius, e.position.y + radius}}
+  local agg = {}
+  for _, r in ipairs(e.surface.find_entities_filtered{area = area, type = "resource"}) do
+    local a = agg[r.name] or {sx = 0, sy = 0, n = 0, amount = 0}
+    a.sx = a.sx + r.position.x; a.sy = a.sy + r.position.y; a.n = a.n + 1; a.amount = a.amount + (r.amount or 0)
+    agg[r.name] = a
+  end
+  local saved = {}
+  for name, a in pairs(agg) do
+    local lname = name .. " patch"
+    local key = lname:lower()
+    local entry = loc_entry(lname, "ore", a.sx / a.n, a.sy / a.n, "~" .. a.amount .. " (auto-surveyed)")
+    storage.memory.locations[key] = entry
+    set_location_tag(key, entry, id)
+    saved[#saved + 1] = {name = lname, x = entry.x, y = entry.y, amount = a.amount}
+  end
+  -- Nearest enemy nest (+ count) as a "threat" point — nearest stays meaningful when scattered.
+  local nearest_sp, nsd, nests = nil, math.huge, 0
+  for _, sp in ipairs(e.surface.find_entities_filtered{area = area, type = "unit-spawner", force = "enemy"}) do
+    nests = nests + 1
+    local d = (sp.position.x - e.position.x) ^ 2 + (sp.position.y - e.position.y) ^ 2
+    if d < nsd then nsd, nearest_sp = d, sp end
+  end
+  if nearest_sp then
+    local entry = loc_entry("enemy base", "threat", nearest_sp.position.x, nearest_sp.position.y, nests .. " nests within " .. radius)
+    storage.memory.locations["enemy base"] = entry
+    set_location_tag("enemy base", entry, id)
+    saved[#saved + 1] = {name = "enemy base", x = entry.x, y = entry.y, kind = "threat", nests = nests}
+  end
+  return saved
+end
+
 commands.add_command("fac_survey_remember", nil, function(cmd)
   u.safe_command(function()
     M.init()
@@ -218,40 +254,7 @@ commands.add_command("fac_survey_remember", nil, function(cmd)
     local id, c = u.find_companion(args[1])
     if not id then u.error_response("Companion not found"); return end
     local radius = tonumber(args[2]) or 100
-    local e = c.entity
-    local area = {{e.position.x - radius, e.position.y - radius}, {e.position.x + radius, e.position.y + radius}}
-    local agg = {}
-    for _, r in ipairs(e.surface.find_entities_filtered{area = area, type = "resource"}) do
-      local a = agg[r.name] or {sx = 0, sy = 0, n = 0, amount = 0}
-      a.sx = a.sx + r.position.x; a.sy = a.sy + r.position.y; a.n = a.n + 1; a.amount = a.amount + (r.amount or 0)
-      agg[r.name] = a
-    end
-    local saved = {}
-    for name, a in pairs(agg) do
-      local lname = name .. " patch"
-      local key = lname:lower()
-      local entry = loc_entry(lname, "ore", a.sx / a.n, a.sy / a.n, "~" .. a.amount .. " (auto-surveyed)")
-      storage.memory.locations[key] = entry
-      set_location_tag(key, entry, id)
-      saved[#saved + 1] = {name = lname, x = entry.x, y = entry.y, amount = a.amount}
-    end
-
-    -- Also map threats: remember the NEAREST enemy nest (+ how many are around) as a
-    -- "threat" memory point, so the buddy knows where danger is (memory_nearest threat,
-    -- goto, guard roles). Nearest (not centroid) stays meaningful when nests are scattered.
-    local nearest_sp, nsd, nests = nil, math.huge, 0
-    for _, sp in ipairs(e.surface.find_entities_filtered{area = area, type = "unit-spawner", force = "enemy"}) do
-      nests = nests + 1
-      local d = (sp.position.x - e.position.x) ^ 2 + (sp.position.y - e.position.y) ^ 2
-      if d < nsd then nsd, nearest_sp = d, sp end
-    end
-    if nearest_sp then
-      local entry = loc_entry("enemy base", "threat", nearest_sp.position.x, nearest_sp.position.y, nests .. " nests within " .. radius)
-      storage.memory.locations["enemy base"] = entry
-      set_location_tag("enemy base", entry, id)
-      saved[#saved + 1] = {name = "enemy base", x = entry.x, y = entry.y, kind = "threat", nests = nests}
-    end
-
+    local saved = M.survey(id, c, radius)
     u.json_response({id = id, radius = radius, remembered = saved, count = #saved})
   end)
 end)

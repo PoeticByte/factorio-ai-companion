@@ -516,11 +516,11 @@ export const TOOLS: Record<string, {
 
   // Standing roles (Phase 5c: auto-response)
   assign_role: {
-    desc: "Assign a standing role over an area (auto-triggers a skill when warranted): guard (nest_clear when enemies enter), refueler (refuel low burners; item=fuel), maintainer (repair/refill; item=turret ammo). Companion must carry its own supplies. Persists across saves.",
+    desc: "Assign a standing role (auto-triggers when warranted): guard (nest_clear when enemies enter the area), refueler (refuel low burners; item=fuel), maintainer (repair/refill; item=turret ammo), scout (passively survey_remember around the companion every ~10s, EVEN while moving — pair with move_follow to map the world as you travel). Companion carries its own supplies. Persists. (x/y = area center; scout uses radius around the companion's current position.)",
     rcon: "/fac_assign_role {companionId} {role} {x} {y} {radius} {item}",
     params: {
       companionId: { type: "number", required: true },
-      role: { type: "string", desc: "guard | refueler | maintainer", required: true },
+      role: { type: "string", desc: "guard | refueler | maintainer | scout", required: true },
       x: { type: "number", required: true },
       y: { type: "number", required: true },
       radius: { type: "number", default: 24 },
